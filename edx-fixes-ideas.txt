@@ -1,0 +1,10 @@
+bok_choy
+https://github.com/DRMacIver/hypothesis
+faker
+factory_boy
+pycontracts
+q
+wrapt
+config_model
+pyinstrument
+http://www.slideshare.net/jkff/two-visualization-tools
