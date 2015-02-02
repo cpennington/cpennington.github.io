@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="description" content="A Meandering Technical Blog">
+        <meta name="author" content="Calen Pennington">
+        <title>Vengefulpickle Productions - Using Hypothesis</title>
+        <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css" />
+        <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap-theme.min.css" />
+
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link rel="stylesheet" type="text/css" href="../css/syntax.css" />
+    </head>
+    <body>
+        <header class="navbar navbar-inverse navbar-fixed-top bs-docs-nav" role="banner">
+            <div class="container">
+                <div class="navbar-header">
+                    <button class="navbar-toggle" type="button" data-toggle="collapse" data-target=".bs-navbar-collapse">
+                        <span class="sr-only">Toggle navigation</span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                    </button>
+                    <a href="../" class="navbar-brand">Vengefulpickle Productions</a>
+                </div>
+                <nav class="collapse navbar-collapse bs-navbar-collapse" role="navigation">
+                    <ul class="nav navbar-nav">
+                        <li><a href="../">Home</a></li>
+                        <li class="active"><a href="../archive.html">Archive</a></li>
+                    </ul>
+                </nav>
+            </div>
+        </header>
+
+        <div id="body" class="container">
+            <h1>Using Hypothesis</h1>
+
+            <div class="info">
+    Posted on February  2, 2015
+    
+</div>
+
+<p><a href="https://github.com/DRMacIver/hypothesis">Hypothesis</a> is a library for property-based testing in python.</p>
+<p>Property-based testing is an alternative approach to unit testing where rather than describing specific input values and the results of executing operations on those values, you instead write a test that should be true of <em>all</em> input data of a certain form, and then let the test framework feed in data until it either finds an example that fails, or runs out of attempts to do so. The grand-daddy of all property-testing libraries is <a href="https://hackage.haskell.org/package/QuickCheck">QuickCheck</a>, but re-implementations exist in many languages.</p>
+<p>This testing technique is most directly applicable to pure functions (where the output of the function depends only on the output), but can be used to generate test data for many other types of tests as well.</p>
+<p>For instance, in the edX LMS, we have several functions to encode and decode strings with <code>/</code> in them.</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="kw">def</span> _quote_slashes(match):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    Helper function for `quote_slashes`</span>
+<span class="co">    &quot;&quot;&quot;</span>
+    matched = match.group(<span class="dv">0</span>)
+    <span class="co"># We have to escape ';', because that is our</span>
+    <span class="co"># escape sequence identifier (otherwise, the escaping)</span>
+    <span class="co"># couldn't distinguish between us adding ';_' to the string</span>
+    <span class="co"># and ';_' appearing naturally in the string</span>
+    <span class="kw">if</span> matched == <span class="st">';'</span>:
+        <span class="kw">return</span> <span class="st">';;'</span>
+    <span class="kw">elif</span> matched == <span class="st">'/'</span>:
+        <span class="kw">return</span> <span class="st">';_'</span>
+    <span class="kw">else</span>:
+        <span class="kw">return</span> matched
+
+
+<span class="kw">def</span> quote_slashes(text):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    Quote '/' characters so that they aren't visible to</span>
+<span class="co">    django's url quoting, unquoting, or url regex matching.</span>
+
+<span class="co">    Escapes '/'' to the sequence ';_', and ';' to the sequence</span>
+<span class="co">    ';;'. By making the escape sequence fixed length, and escaping</span>
+<span class="co">    identifier character ';', we are able to reverse the escaping.</span>
+<span class="co">    &quot;&quot;&quot;</span>
+    <span class="kw">return</span> re.sub(<span class="st">ur'[;/]'</span>, _quote_slashes, text)
+
+
+<span class="kw">def</span> _unquote_slashes(match):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    Helper function for `unquote_slashes`</span>
+<span class="co">    &quot;&quot;&quot;</span>
+    matched = match.group(<span class="dv">0</span>)
+    <span class="kw">if</span> matched == <span class="st">';;'</span>:
+        <span class="kw">return</span> <span class="st">';'</span>
+    <span class="kw">elif</span> matched == <span class="st">';_'</span>:
+        <span class="kw">return</span> <span class="st">'/'</span>
+    <span class="kw">else</span>:
+        <span class="kw">return</span> matched
+
+
+<span class="kw">def</span> unquote_slashes(text):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    Unquote slashes quoted by `quote_slashes`</span>
+<span class="co">    &quot;&quot;&quot;</span>
+    <span class="kw">return</span> re.sub(<span class="st">r'(;;|;_)'</span>, _unquote_slashes, text)</code></pre>
+<p>The tests for these functions list out specific input strings to test on</p>
+<pre class="sourceCode python"><code class="sourceCode python">TEST_STRINGS = [
+    <span class="st">''</span>,
+    <span class="co">'foobar'</span>,
+    <span class="co">'foo/bar'</span>,
+    <span class="co">'foo/bar;'</span>,
+    <span class="co">'foo;;bar'</span>,
+    <span class="co">'foo;_bar'</span>,
+    <span class="co">'foo/'</span>,
+    <span class="co">'/bar'</span>,
+    <span class="co">'foo//bar'</span>,
+    <span class="co">'foo;;;bar'</span>,
+]
+
+
+<span class="ot">@ddt</span>
+<span class="kw">class</span> TestQuoteSlashes(TestCase):
+    <span class="co">&quot;&quot;&quot;Test the quote_slashes and unquote_slashes functions&quot;&quot;&quot;</span>
+
+    <span class="ot">@data</span>(*TEST_STRINGS)
+    <span class="kw">def</span> test_inverse(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertEquals(test_string, unquote_slashes(quote_slashes(test_string)))
+
+    <span class="ot">@data</span>(*TEST_STRINGS)
+    <span class="kw">def</span> test_escaped(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertNotIn(<span class="st">'/'</span>, quote_slashes(test_string))</code></pre>
+<p>(In this snippet, <code>ddt</code> refers to <a href="http://ddt.readthedocs.org/en/latest/">another useful testing library</a> which I might cover in a later post.)</p>
+<p>These tests seem fairly complete, but we might worry about whether we got all of the combinations of <code>;</code>, <code>_</code>, and <code>/</code>, and all of their edge cases.</p>
+<p>So, let’s try changing the test to a property based test instead, and see if we can let the computer find better test cases for us.</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="ch">from</span> hypothesis.testdecorators <span class="ch">import</span> given
+
+<span class="kw">class</span> TestQuoteSlashes(TestCase):
+    <span class="co">&quot;&quot;&quot;Test the quote_slashes and unquote_slashes functions&quot;&quot;&quot;</span>
+
+    <span class="ot">@given</span>(<span class="dt">str</span>)
+    <span class="kw">def</span> test_inverse(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertEquals(test_string, unquote_slashes(quote_slashes(test_string)))
+
+    <span class="ot">@given</span>(<span class="dt">str</span>)
+    <span class="kw">def</span> test_escaped(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertNotIn(<span class="st">'/'</span>, quote_slashes(test_string))</code></pre>
+<p>Those tests run, and…. all pass.</p>
+<pre><code>python -m coverage run --rcfile=lms/.coveragerc ./manage.py lms test --verbosity=1 lms_xblock.test.test_runtime   --traceback --settings=test
+========================================
+ Running tests for lms
+========================================
+nosetests lms_xblock.test.test_runtime --id-file /home/cpennington/work/edx-platform/.testids/lms/noseids --xunit-file /home/cpennington/work/edx-platform/reports/lms/nosetests.xml --verbosity=1
+Creating test database for alias 'default'...
+.........
+-----------------------------------------------------------------------------
+9 tests run in 2.6 seconds (9 tests passed)</code></pre>
+<p>How uninteresting. Let’s introduce a bug in the code, to see how the test failure manifests.</p>
+<pre class="sourceCode diff"><code class="sourceCode diff">     if matched == ';':
+         return ';;'
+     elif matched == '/':
+<span class="st">-        return ';_'</span>
+<span class="ot">+        return ';;'</span></code></pre>
+<p>Now, we get an interesting failure.</p>
+<pre><code>1) FAIL: test_inverse (lms_xblock.test.test_runtime.TestQuoteSlashes)
+
+   Traceback (most recent call last):
+    /home/cpennington/.virtualenvs/edx-platform/local/lib/python2.7/site-packages/hypothesis/testdecorators.py line 41 in wrapped_test
+      test(*(arguments + falsifying_example[0]), **falsifying_example[1])
+    lms/djangoapps/lms_xblock/test/test_runtime.py line 22 in test_inverse
+      self.assertEquals(test_string, unquote_slashes(quote_slashes(test_string)))
+   AssertionError: '/' != ';'</code></pre>
+<p>But run the same test again, and it passes! That highlights one of the biggest issues with property-testing, which is that it relies on generating enough input data to catch the bug. As the space of input grows, so does the time it takes to explore it.</p>
+<p>With Hypothesis, we can combat this by increasing the number of examples.</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="ch">from</span> hypothesis.testdecorators <span class="ch">import</span> given
+<span class="ch">from</span> hypothesis.settings <span class="ch">import</span> Settings
+
+<span class="kw">class</span> TestQuoteSlashes(TestCase):
+    <span class="co">&quot;&quot;&quot;Test the quote_slashes and unquote_slashes functions&quot;&quot;&quot;</span>
+
+    <span class="ot">@given</span>(<span class="dt">str</span>, verifier_settings=Settings(max_examples=<span class="dv">1000</span>))
+    <span class="kw">def</span> test_inverse(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertEquals(test_string, unquote_slashes(quote_slashes(test_string)))
+
+    <span class="ot">@given</span>(<span class="dt">str</span>, verifier_settings=Settings(max_examples=<span class="dv">1000</span>))
+    <span class="kw">def</span> test_escaped(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertNotIn(<span class="st">'/'</span>, quote_slashes(test_string))</code></pre>
+<p>Now the test consistantly detects our bug (the number of examples and test timeout can both be tuned to limit the amount of time spent in the test suite).</p>
+<p>An advantage to this randomized testing over our fixed list of strings is that it will test characters that we might not have thought to in our attempt at an exhaustive list. If we change the set of characters used to encode the <code>/</code>, our tests won’t need to change. However, the test is still limited by what characters might be generated by the random data generator. If we switch <code>@given(str)</code> to <code>@given(unicode)</code>, the test no longer identifies the bug, because Hypothesis uses a data generator for <code>unicode</code> that includes only numbers an ascii characters (and no symbols such as <code>/</code>).</p>
+
+        </div>
+        <footer>
+            <div class="container">
+                Site proudly generated by
+                <a href="http://jaspervdj.be/hakyll">Hakyll</a>
+            </div>
+        </footer>
+        <script src="//code.jquery.com/jquery-2.1.3.min.js"></script>
+        <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/js/bootstrap.min.js"></script>
+    </body>
+</html>
