@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
 {-# LANGUAGE OverloadedStrings #-}
-import Data.Monoid (mappend)
+import Data.Monoid (mconcat)
 import Hakyll
 import Data.Default (def)
 import System.Environment (getArgs)
@@ -48,10 +48,12 @@ main = do
             route idRoute
             compile $ do
                 posts <- recentFirst =<< loadAll postsPattern
-                let archiveCtx =
-                        listField "posts" postCtx (return posts) `mappend`
-                        constField "title" "Archives"            `mappend`
-                        defaultContext
+                let archiveCtx = mconcat
+                        [ listField "posts" postCtx (return posts)
+                        , constField "title" "Archives"
+                        , constField "archive" "True"
+                        , defaultContext
+                        ]
 
                 makeItem ""
                     >>= loadAndApplyTemplate "templates/archive.html" archiveCtx
@@ -63,10 +65,12 @@ main = do
             route idRoute
             compile $ do
                 posts <- recentFirst =<< loadAll postsPattern
-                let indexCtx =
-                        listField "posts" postCtx (return posts) `mappend`
-                        constField "title" "Home"                `mappend`
-                        defaultContext
+                let indexCtx = mconcat
+                        [ listField "posts" postCtx (return posts)
+                        , constField "title" "Home"
+                        , constField "home" "True"
+                        , defaultContext
+                        ]
 
                 getResourceBody
                     >>= applyAsTemplate indexCtx
@@ -78,6 +82,8 @@ main = do
 
 --------------------------------------------------------------------------------
 postCtx :: Context String
-postCtx =
-    dateField "date" "%B %e, %Y" `mappend`
-    defaultContext
+postCtx = mconcat
+    [ dateField "date" "%B %e, %Y"
+    , constField "archive" "True"
+    , defaultContext
+    ]

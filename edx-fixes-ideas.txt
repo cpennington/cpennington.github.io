@@ -8,3 +8,5 @@ wrapt
 config_model
 pyinstrument
 http://www.slideshare.net/jkff/two-visualization-tools
+how to write a pylint checker
+memsee
