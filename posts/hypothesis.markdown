@@ -1,6 +1,6 @@
 ---
 title: Using Hypothesis
-published: 2015-01-13 08:00:00
+published: 2015-02-02 10:00:00
 ---
 
 [Hypothesis][] is a library for
