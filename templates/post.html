@@ -1,13 +1,20 @@
-<div class="byline">
-    Posted on $date$
-    $if(author_name)$
-        by $author_name$
-    $endif$
-</div>
+<article>
+    <header>
+        <h1>$title$</h1>
+        <div class="byline">
+            Posted on $date$
+            $if(author_name)$
+                by $author_name$
+            $endif$
+        </div>
+    </header>
 
-$body$
+    $body$
+    <aside class="comments">
+        <div id="disqus_thread"></div>
+    </aside>
+</article>
 
-<div id="disqus_thread"></div>
 <script type="text/javascript">
     /* * * CONFIGURATION VARIABLES: EDIT BEFORE PASTING INTO YOUR WEBPAGE * * */
     var disqus_shortname = 'vengefulpickle'; // required: replace example with your forum shortname

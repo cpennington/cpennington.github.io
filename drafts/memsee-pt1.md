@@ -7,7 +7,9 @@ Over the past several weeks, we've been contending with several memory issues on
 The first manifested as a sudden increase in the resting memory footprint of our production
 web-processes. The second presented as a classic memory leak while doing offline grading
 of an entire course. In this post, I'll go though the steps and tools we used to identify
-the causes of both of these leaks.
+the causes of the first of these leaks.
+
+<!--more-->
 
 Instrumentation
 ===============

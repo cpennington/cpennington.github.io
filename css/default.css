@@ -1,6 +1,7 @@
 body {
     margin-top: 75px;
     font-size: 16px;
+    line-height: 25px;
 }
 
 .pre-x-scrollable code {
@@ -11,4 +12,8 @@ body {
 
 .byline {
     font-size: 80%;
+}
+
+.post-snippet {
+    padding-bottom: 25px;
 }

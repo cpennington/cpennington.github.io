@@ -4,6 +4,7 @@ import Data.Monoid (mconcat)
 import Hakyll
 import Data.Default (def)
 import System.Environment (getArgs)
+import Text.Pandoc.Options (writerHtml5, writerSectionDivs)
 
 
 --------------------------------------------------------------------------------
@@ -21,6 +22,12 @@ main = do
         postsPattern = if previewMode
             then "posts/*" .||. "drafts/*"
             else "posts/*"
+        pandocCompiler = pandocCompilerWith
+            defaultHakyllReaderOptions
+            defaultHakyllWriterOptions {
+                writerHtml5 = True,
+                writerSectionDivs = True
+                }
 
     hakyllWith config $ do
         match "images/*" $ do
@@ -40,6 +47,7 @@ main = do
         match postsPattern $ do
             route $ setExtension "html"
             compile $ pandocCompiler
+                >>= saveSnapshot "content"
                 >>= loadAndApplyTemplate "templates/post.html"    postCtx
                 >>= loadAndApplyTemplate "templates/default.html" postCtx
                 >>= relativizeUrls
@@ -85,5 +93,6 @@ postCtx :: Context String
 postCtx = mconcat
     [ dateField "date" "%B %e, %Y"
     , constField "archive" "True"
+    , teaserField "teaser" "content"
     , defaultContext
     ]

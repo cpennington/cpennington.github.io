@@ -15,6 +15,8 @@ that fails, or runs out of attempts to do so. The grand-daddy of all
 property-testing libraries is [QuickCheck][], but re-implementations
 exist in many languages.
 
+<!--more-->
+
 This testing technique is most directly applicable to pure functions
 (where the output of the function depends only on the output), but
 can be used to generate test data for many other types of tests as well.
