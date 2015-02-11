@@ -1,6 +1,7 @@
 ---
 title: A Tale of Two Leaks (Part 1)
-date: 2015-02-10 10:40:00PM
+published: 2015-02-10 10:40:00PM
+edited: 2015-02-11 11:00:00AM
 ---
 
 Over the past several weeks, we've been contending with several memory issues on edx.org.
@@ -15,12 +16,12 @@ Instrumentation
 ===============
 
 The first step in any debugging task is gathering information. In our case, this was tricky
-initially, because python has no built-in facility for exporting information about what is
+initially, because Python has no built-in facility for exporting information about what is
 using memory in a running process. So, the first step was to integrate such a facility into
 [edx-platform][].
 
 In previous investigations of memory usage, I've found [meliae][] to be an extraordinarily useful
-tool for gathering statistics about the objects resident in memory in a python process.
+tool for gathering statistics about the objects resident in memory in a Python process.
 To integrate it into [edx-platform][], I added a signal handler during process startup.
 
 ~~~ {.python .pre-scrollable .pre-x-scrollable}
@@ -65,8 +66,8 @@ a steady state instead. Fortunately, we were able to reproduce the same issue on
 shortly after a worker had started. With the help of our devops team, I collected a memory dump
 and began analysis.
 
-The primary tool I used for debugging both of these memory leaks was [memsee][], a small python
-command written by [Ned] and I for a previous memory leak investigation. In a nutshell, memsee
+The primary tool I used for debugging both of these memory leaks was [memsee][], a small Python
+command written by [Ned] and me for a previous memory leak investigation. In a nutshell, memsee
 is a thin wrapper around a [SQLite][] that adds additional methods and shortcuts for navigating
 the set of objects and references that [meliae][] dumps out.
 
