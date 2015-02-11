@@ -44,7 +44,7 @@
         </div>
     </header>
 
-    <p><a href="https://github.com/DRMacIver/hypothesis">Hypothesis</a> is a library for property-based testing in python.</p>
+    <p><a href="https://github.com/DRMacIver/hypothesis">Hypothesis</a> is a library for property-based testing in Python.</p>
 <p>Property-based testing is an alternative approach to unit testing where rather than describing specific input values and the results of executing operations on those values, you instead write a test that should be true of <em>all</em> input data of a certain form, and then let the test framework feed in data until it either finds an example that fails, or runs out of attempts to do so. The grand-daddy of all property-testing libraries is <a href="https://hackage.haskell.org/package/QuickCheck">QuickCheck</a>, but re-implementations exist in many languages.</p>
 <!--more-->
 <p>This testing technique is most directly applicable to pure functions (where the output of the function depends only on the output), but can be used to generate test data for many other types of tests as well.</p>
@@ -138,15 +138,15 @@
     <span class="kw">def</span> test_escaped(<span class="ot">self</span>, test_string):
         <span class="ot">self</span>.assertNotIn(<span class="st">'/'</span>, quote_slashes(test_string))</code></pre>
 <p>Those tests run, and…. all pass.</p>
-<pre><code>python -m coverage run --rcfile=lms/.coveragerc ./manage.py lms test --verbosity=1 lms_xblock.test.test_runtime   --traceback --settings=test
+<pre class="sourceCode bash"><code class="sourceCode bash"><span class="kw">&gt;</span> <span class="kw">python</span> -m coverage run --rcfile=lms/.coveragerc ./manage.py lms test --verbosity=1 lms_xblock.test.test_runtime   --traceback --settings=test
 ========================================
- Running tests for lms
+ <span class="kw">Running</span> tests for lms
 ========================================
-nosetests lms_xblock.test.test_runtime --id-file /home/cpennington/work/edx-platform/.testids/lms/noseids --xunit-file /home/cpennington/work/edx-platform/reports/lms/nosetests.xml --verbosity=1
-Creating test database for alias 'default'...
-.........
------------------------------------------------------------------------------
-9 tests run in 2.6 seconds (9 tests passed)</code></pre>
+<span class="kw">nosetests</span> lms_xblock.test.test_runtime --id-file /home/cpennington/work/edx-platform/.testids/lms/noseids --xunit-file /home/cpennington/work/edx-platform/reports/lms/nosetests.xml --verbosity=1
+<span class="kw">Creating</span> test database for alias <span class="st">'default'</span>...
+<span class="kw">.........</span>
+<span class="kw">-----------------------------------------------------------------------------</span>
+<span class="kw">9</span> tests run in 2.6 seconds (9 tests passed)</code></pre>
 <p>How uninteresting. Let’s introduce a bug in the code, to see how the test failure manifests.</p>
 <pre class="sourceCode diff"><code class="sourceCode diff">     if matched == ';':
          return ';;'
@@ -154,14 +154,14 @@ Creating test database for alias 'default'...
 <span class="st">-        return ';_'</span>
 <span class="ot">+        return ';;'</span></code></pre>
 <p>Now, we get an interesting failure.</p>
-<pre><code>1) FAIL: test_inverse (lms_xblock.test.test_runtime.TestQuoteSlashes)
+<pre class="sourceCode bash"><code class="sourceCode bash"><span class="kw">1</span>) <span class="kw">FAIL</span>: test_inverse (lms_xblock.test.test_runtime.TestQuoteSlashes)
 
-   Traceback (most recent call last):
-    /home/cpennington/.virtualenvs/edx-platform/local/lib/python2.7/site-packages/hypothesis/testdecorators.py line 41 in wrapped_test
-      test(*(arguments + falsifying_example[0]), **falsifying_example[1])
-    lms/djangoapps/lms_xblock/test/test_runtime.py line 22 in test_inverse
-      self.assertEquals(test_string, unquote_slashes(quote_slashes(test_string)))
-   AssertionError: '/' != ';'</code></pre>
+   <span class="kw">Traceback</span> (most recent call last)<span class="kw">:</span>
+    <span class="kw">/home/cpennington/.virtualenvs/edx-platform/local/lib/python2.7/site-packages/hypothesis/testdecorators.py</span> line 41 in wrapped_test
+      <span class="kw">test</span>(*(arguments + falsifying_example[0]), <span class="kw">**falsifying_example</span>[1])
+    <span class="kw">lms/djangoapps/lms_xblock/test/test_runtime.py</span> line 22 in test_inverse
+      <span class="kw">self.assertEquals</span>(test_string, unquote_slashes(quote_slashes(test_string)))
+   <span class="kw">AssertionError</span>: <span class="st">'/'</span> != <span class="st">';'</span></code></pre>
 <p>But run the same test again, and it passes! That highlights one of the biggest issues with property-testing, which is that it relies on generating enough input data to catch the bug. As the space of input grows, so does the time it takes to explore it.</p>
 <p>With Hypothesis, we can combat this by increasing the number of examples.</p>
 <pre class="sourceCode python"><code class="sourceCode python"><span class="ch">from</span> hypothesis.testdecorators <span class="ch">import</span> given
@@ -177,8 +177,18 @@ Creating test database for alias 'default'...
     <span class="ot">@given</span>(<span class="dt">str</span>, verifier_settings=Settings(max_examples=<span class="dv">1000</span>))
     <span class="kw">def</span> test_escaped(<span class="ot">self</span>, test_string):
         <span class="ot">self</span>.assertNotIn(<span class="st">'/'</span>, quote_slashes(test_string))</code></pre>
-<p>Now the test consistantly detects our bug (the number of examples and test timeout can both be tuned to limit the amount of time spent in the test suite).</p>
-<p>An advantage to this randomized testing over our fixed list of strings is that it will test characters that we might not have thought to in our attempt at an exhaustive list. If we change the set of characters used to encode the <code>/</code>, our tests won’t need to change. However, the test is still limited by what characters might be generated by the random data generator. If we switch <code>@given(str)</code> to <code>@given(unicode)</code>, the test no longer identifies the bug, because Hypothesis uses a data generator for <code>unicode</code> that includes only numbers an ascii characters (and no symbols such as <code>/</code>).</p>
+<p>Now the test consistently detects our bug (the number of examples and test timeout can both be tuned to limit the amount of time spent in the test suite).</p>
+<p>An advantage to this randomized testing over our fixed list of strings is that it will test characters that we might not have thought to in our attempt at an exhaustive list. If we change the set of characters used to encode the <code>/</code>, our tests won’t need to change. However, the test is still limited by what characters might be generated by the random data generator. If we switch <code>@given(str)</code> to <code>@given(unicode)</code>, the test no longer identifies the bug, because Hypothesis uses a data generator for <code>unicode</code> that includes only numbers and ascii characters (and no symbols such as <code>/</code>). This seems like a questionable choice to me, but was perhaps made to limit the search space to “text-like” strings. There is always a tradeoff between on breadth and depth of the search that property-based testing makes, because there is a finite time to generate new test data. By limiting the number of characters used to generate strings, we can expect to more completely explore the space of a given string length.</p>
+<p>One might also consider injecting generated strings into a list of <code>ddt</code> items.</p>
+<pre class="sourceCode python"><code class="sourceCode python">    <span class="ot">@data</span>(*(TEST_STRINGS + generate_strings()))
+    <span class="kw">def</span> test_inverse(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertEquals(test_string, unquote_slashes(quote_slashes(test_string)))
+
+    <span class="ot">@data</span>(*(TEST_STRINGS + generate_strings()))
+    <span class="kw">def</span> test_escaped(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertNotIn(<span class="st">'/'</span>, quote_slashes(test_string))</code></pre>
+<p>This would give some of the advantages of using property based testing. However, one facility that this wouldn’t provide is test-case shrinking. Hypothesis, like QuickCheck before it, will attempt to reduce your test cases for you, when it finds a failure, to find the smallest possible counterexample for the property. This is important, especially when your test generation code can potentially produce very, very large input data initially.</p>
+<p>I think that Hypothesis may have a place in the edx testing ecosystem. The methods covered in this post would benefit, and there are likely other properties that we could test as well, especially with a little investment in data generation. For instance, we could generate random courses with the installed XBlocks, and validate that import/export are inverses. We might also be able to test stateful code using Hypothesis’ stateful testing mechanism (which I hope to explore in a future post).</p>
     <aside class="comments">
         <div id="disqus_thread"></div>
     </aside>

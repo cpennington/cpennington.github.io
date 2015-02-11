@@ -48,8 +48,8 @@
 <!--more-->
 <section id="instrumentation" class="level1">
 <h1>Instrumentation</h1>
-<p>The first step in any debugging task is gathering information. In our case, this was tricky initially, because python has no built-in facility for exporting information about what is using memory in a running process. So, the first step was to integrate such a facility into <a href="https://github.com/edx/edx-platform">edx-platform</a>.</p>
-<p>In previous investigations of memory usage, I’ve found <a href="https://pypi.python.org/pypi/meliae">meliae</a> to be an extraordinarily useful tool for gathering statistics about the objects resident in memory in a python process. To integrate it into <a href="https://github.com/edx/edx-platform">edx-platform</a>, I added a signal handler during process startup.</p>
+<p>The first step in any debugging task is gathering information. In our case, this was tricky initially, because Python has no built-in facility for exporting information about what is using memory in a running process. So, the first step was to integrate such a facility into <a href="https://github.com/edx/edx-platform">edx-platform</a>.</p>
+<p>In previous investigations of memory usage, I’ve found <a href="https://pypi.python.org/pypi/meliae">meliae</a> to be an extraordinarily useful tool for gathering statistics about the objects resident in memory in a Python process. To integrate it into <a href="https://github.com/edx/edx-platform">edx-platform</a>, I added a signal handler during process startup.</p>
 <pre class="sourceCode python pre-scrollable pre-x-scrollable"><code class="sourceCode python"><span class="co"># lms/wsgi.py</span>
 <span class="ch">import</span> openedx.core.operations
 openedx.core.operations.install_memory_dumper()
@@ -78,7 +78,7 @@ openedx.core.operations.install_memory_dumper()
 <section id="stable-memory-increase" class="level1">
 <h1>Stable Memory Increase</h1>
 <p>The first memory “leak” seemed less like a classical leak than unintentionally large memory use. Our production workers (which used to sit at ~1.2GB of memory) started to consume ~1.8GB during a steady state instead. Fortunately, we were able to reproduce the same issue on staging, as well, shortly after a worker had started. With the help of our devops team, I collected a memory dump and began analysis.</p>
-<p>The primary tool I used for debugging both of these memory leaks was <a href="https://github.com/nedbat/memsee">memsee</a>, a small python command written by [Ned] and I for a previous memory leak investigation. In a nutshell, memsee is a thin wrapper around a [SQLite][] that adds additional methods and shortcuts for navigating the set of objects and references that <a href="https://pypi.python.org/pypi/meliae">meliae</a> dumps out.</p>
+<p>The primary tool I used for debugging both of these memory leaks was <a href="https://github.com/nedbat/memsee">memsee</a>, a small Python command written by [Ned] and me for a previous memory leak investigation. In a nutshell, memsee is a thin wrapper around a [SQLite][] that adds additional methods and shortcuts for navigating the set of objects and references that <a href="https://pypi.python.org/pypi/meliae">meliae</a> dumps out.</p>
 <p>I’ve recreated my investigative process (with some dead-ends elided) in memsee below:</p>
 <pre class="sourceCode bash pre-scrollable pre-x-scrollable"><code class="sourceCode bash"><span class="kw">&gt;</span> <span class="kw">python</span> memsee.py
 <span class="co"># Initialized a database to store the dump</span>
