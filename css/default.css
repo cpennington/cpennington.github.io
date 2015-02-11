@@ -17,3 +17,7 @@ body {
 .post-snippet {
     padding-bottom: 25px;
 }
+
+.about-me, .contact {
+    font-size: 80%;
+}
