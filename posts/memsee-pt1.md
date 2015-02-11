@@ -1,6 +1,6 @@
 ---
 title: A Tale of Two Leaks (Part 1)
-date: 3000-01-01
+date: 2015-02-10 10:40:00PM
 ---
 
 Over the past several weeks, we've been contending with several memory issues on edx.org.
