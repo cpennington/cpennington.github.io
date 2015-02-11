@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="description" content="A Meandering Technical Blog">
+        <meta name="author" content="Calen Pennington">
+        <title>Vengefulpickle Productions - A Tale of Two Leaks (Part 1)</title>
+        <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css" />
+        <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap-theme.min.css" />
+
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link rel="stylesheet" type="text/css" href="../css/syntax.css" />
+    </head>
+    <body>
+        <header class="navbar navbar-inverse navbar-fixed-top bs-docs-nav" role="banner">
+            <div class="container">
+                <div class="navbar-header">
+                    <button class="navbar-toggle" type="button" data-toggle="collapse" data-target=".bs-navbar-collapse">
+                        <span class="sr-only">Toggle navigation</span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                    </button>
+                    <a href="../" class="navbar-brand">Vengefulpickle Productions</a>
+                </div>
+                <nav class="collapse navbar-collapse bs-navbar-collapse" role="navigation">
+                    <ul class="nav navbar-nav">
+                        <li><a href="../">Home</a></li>
+                        <li class="active"><a href="../archive.html">Archive</a></li>
+                    </ul>
+                </nav>
+            </div>
+        </header>
+
+        <div id="body" class="container col-lg-6 col-lg-offset-2">
+            <article>
+    <header>
+        <h1>A Tale of Two Leaks (Part 1)</h1>
+        <div class="byline">
+            Posted on February 10, 2015
+            
+        </div>
+    </header>
+
+    <p>Over the past several weeks, we’ve been contending with several memory issues on edx.org. The first manifested as a sudden increase in the resting memory footprint of our production web-processes. The second presented as a classic memory leak while doing offline grading of an entire course. In this post, I’ll go though the steps and tools we used to identify the causes of the first of these leaks.</p>
+<!--more-->
+<section id="instrumentation" class="level1">
+<h1>Instrumentation</h1>
+<p>The first step in any debugging task is gathering information. In our case, this was tricky initially, because python has no built-in facility for exporting information about what is using memory in a running process. So, the first step was to integrate such a facility into <a href="https://github.com/edx/edx-platform">edx-platform</a>.</p>
+<p>In previous investigations of memory usage, I’ve found <a href="https://pypi.python.org/pypi/meliae">meliae</a> to be an extraordinarily useful tool for gathering statistics about the objects resident in memory in a python process. To integrate it into <a href="https://github.com/edx/edx-platform">edx-platform</a>, I added a signal handler during process startup.</p>
+<pre class="sourceCode python pre-scrollable pre-x-scrollable"><code class="sourceCode python"><span class="co"># lms/wsgi.py</span>
+<span class="ch">import</span> openedx.core.operations
+openedx.core.operations.install_memory_dumper()
+
+<span class="co"># openedx/core/operations.py</span>
+<span class="ch">import</span> os
+<span class="ch">import</span> signal
+<span class="ch">import</span> tempfile
+
+<span class="ch">from</span> datetime <span class="ch">import</span> datetime
+<span class="ch">from</span> meliae <span class="ch">import</span> scanner
+
+
+<span class="kw">def</span> dump_memory(signum, frame):
+    <span class="co">&quot;&quot;&quot;Dump memory stats for the current process to a temp directory. Uses the meliae output format.&quot;&quot;&quot;</span>
+    scanner.dump_all_objects(<span class="st">'{}/meliae.{}.{}.dump'</span>.<span class="dt">format</span>(tempfile.gettempdir(), datetime.now().isoformat(), os.getpid()))
+
+<span class="kw">def</span> install_memory_dumper(dump_signal=signal.SIGPROF):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    Install a signal handler on `signal` to dump memory stats for the current process.</span>
+<span class="co">    &quot;&quot;&quot;</span>
+    signal.signal(dump_signal, dump_memory)</code></pre>
+<p>This signal handler defaults to using <code>SIGPROF</code> as the signal to trigger the memory dump, because that signal isn’t already in use by <a href="http://gunicorn.org/">gunicorn</a> for worker management. However, other runtime environments might need other signals (I wasn’t able to figure out how to get <a href="https://uwsgi-docs.readthedocs.org/en/latest/">uWSGI</a> to pass signals into its worker processes during my testing).</p>
+<p>With this instrumentation in hand, we were able to collect memory dumps from processes exhibiting both of the different memory leaks.</p>
+</section>
+<section id="stable-memory-increase" class="level1">
+<h1>Stable Memory Increase</h1>
+<p>The first memory “leak” seemed less like a classical leak than unintentionally large memory use. Our production workers (which used to sit at ~1.2GB of memory) started to consume ~1.8GB during a steady state instead. Fortunately, we were able to reproduce the same issue on staging, as well, shortly after a worker had started. With the help of our devops team, I collected a memory dump and began analysis.</p>
+<p>The primary tool I used for debugging both of these memory leaks was <a href="https://github.com/nedbat/memsee">memsee</a>, a small python command written by [Ned] and I for a previous memory leak investigation. In a nutshell, memsee is a thin wrapper around a [SQLite][] that adds additional methods and shortcuts for navigating the set of objects and references that <a href="https://pypi.python.org/pypi/meliae">meliae</a> dumps out.</p>
+<p>I’ve recreated my investigative process (with some dead-ends elided) in memsee below:</p>
+<pre class="sourceCode bash pre-scrollable pre-x-scrollable"><code class="sourceCode bash"><span class="kw">&gt;</span> <span class="kw">python</span> memsee.py
+<span class="co"># Initialized a database to store the dump</span>
+::<span class="kw">&gt;</span> <span class="kw">create</span> stage-dump.db
+
+<span class="co"># Import the dump data</span>
+::<span class="kw">&gt;</span> <span class="kw">read</span> <span class="ot">stage</span>-dump.<span class="ot">meliae</span>
+<span class="kw">Reading.......................................................................................</span>
+<span class="kw">..............................................................................................</span>
+<span class="kw">..............................................................................................</span>
+<span class="kw">..............................................................................................</span>
+<span class="kw">..........................................</span>
+<span class="kw">Marking</span> top objects... 2940
+<span class="kw">4121623</span> (4.1M) <span class="kw">objects</span> and 14969737 (15.0M) <span class="kw">references</span> totalling 1220387792 (1.2G) <span class="kw">bytes</span> (542.6s)
+
+<span class="co"># Find out which objects are most common</span>
+::<span class="kw">&gt;</span> <span class="kw">select</span> <span class="kw">count</span>(*), <span class="kw">type</span> from obj group by type order by 1<span class="kw">;</span>
+
+<span class="kw">&lt;snip&gt;</span>
+<span class="co">#0.1068        5982 datetime.datetime</span>
+<span class="co">#0.1069        6227 DictFieldData</span>
+<span class="co">#0.1070        7192 SequenceDescriptorWi</span>
+<span class="co">#0.1071        8263 weakref</span>
+<span class="co">#0.1072       12928 cell</span>
+<span class="co">#0.1073       14485 float</span>
+<span class="co">#0.1074       14618 CustomTagDescriptorW</span>
+<span class="co">#0.1075       18210 int</span>
+<span class="co">#0.1076       18810 VideoDescriptorWithM</span>
+<span class="co">#0.1077       26786 CapaDescriptorWithMi</span>
+<span class="co">#0.1078       29140 DiscussionDescriptor</span>
+<span class="co">#0.1079       37534 code</span>
+<span class="co">#0.1080       39182 VerticalDescriptorWi</span>
+<span class="co">#0.1081       49247 function</span>
+<span class="co">#0.1082       82098 tuple</span>
+<span class="co">#0.1083      141493 InheritanceKeyValueS</span>
+<span class="co">#0.1084      141493 KvsFieldData</span>
+<span class="co">#0.1085      147720 ScopeIds</span>
+<span class="co">#0.1086      148333 BlockUsageLocator</span>
+<span class="co">#0.1087      382851 list</span>
+<span class="co">#0.1088      404395 unicode</span>
+<span class="co">#0.1089     1006998 str</span>
+<span class="co">#0.1090     1306709 dict</span></code></pre>
+<p>Observe that there are a lot of KvsFieldData objects resident in memory. Let’s find out what’s referencing them. Some notes about memsee syntax:</p>
+<ul>
+<li><code>path</code> takes the form <code>path from &quot;$where_clause&quot; to &quot;$where_clause&quot;</code>. The first clause specifies which objects to begin the search from, and the second specifies which objects to terminate on.</li>
+<li><code>0&amp;</code> means ‘the children of the object at address 0’, and ‘address 0’ is a virtual object that is assumed to be a parent of anything in the system that doesn’t already have a parent.</li>
+<li><code>path</code> only returns the first path it finds from one set of objects to another.</li>
+</ul>
+<pre class="sourceCode bash pre-scrollable pre-x-scrollable"><code class="sourceCode bash">::<span class="kw">&gt;</span> <span class="kw">path</span> from <span class="st">&quot;address in 0&amp;&quot;</span> to <span class="st">&quot;type = 'KvsFieldData'&quot;</span>
+
+<span class="kw">Added</span> 20000 paths to newly discovered nodes
+<span class="kw">Added</span> 12361 paths to newly discovered nodes
+<span class="kw">Added</span> 4462 paths to newly discovered nodes
+<span class="kw">Added</span> 19960 paths to newly discovered nodes
+<span class="kw">Added</span> 39083 paths to newly discovered nodes
+<span class="kw">Added</span> 84670 paths to newly discovered nodes
+<span class="kw">Added</span> 209591 paths to newly discovered nodes
+<span class="kw">Added</span> 231865 paths to newly discovered nodes
+<span class="kw">Added</span> 291043 paths to newly discovered nodes
+<span class="kw">Added</span> 240986 paths to newly discovered nodes
+<span class="kw">Added</span> 104132 paths to newly discovered nodes
+<span class="kw">Added</span> 107793 paths to newly discovered nodes
+<span class="kw">Added</span> 263869 paths to newly discovered nodes
+<span class="kw">Added</span> 3392646 paths to newly discovered nodes
+<span class="kw">Added</span> 3502907 paths to newly discovered nodes
+<span class="co">#                 address type                 name                       value                 size        len mark       repr</span>
+<span class="kw">--------</span> ---------------- -------------------- -------------------------- --------------- ---------- ---------- ---------- ----------
+<span class="co">#0.0           1294669280 frame                ∘                          wait                   512          ∘ ∘          frame</span>
+<span class="co">#0.1             13270096 dict                 ∘                          ∘                     3352         54 ∘          dict</span>
+<span class="co">#0.2      140244885039992 module               sys                        ∘                       56          ∘ ∘          sys</span>
+<span class="co">#0.3             12619664 dict                 ∘                          ∘                     3352         73 ∘          dict</span>
+<span class="co">#0.4             12611920 dict                 ∘                          ∘                   786712       6069 ∘          dict</span>
+<span class="co">#0.5             47884224 module               xmodule.modulestore.django ∘                       56          ∘ ∘          xmodule.mo</span>
+<span class="co">#0.6             47993568 dict                 ∘                          ∘                     3352         31 ∘          dict</span>
+<span class="co">#0.7             88346448 MixedModuleStore     ∘                          ∘                       64          ∘ ∘          MixedModul</span>
+<span class="co">#0.8             88505440 dict                 ∘                          ∘                     1048         12 ∘          dict</span>
+<span class="co">#0.9             24983952 dict                 ∘                          ∘                    12568        230 ∘          dict</span>
+<span class="co">#0.10           109863312 XMLModuleStore       ∘                          ∘                       64          ∘ ∘          XMLModuleS</span>
+<span class="co">#0.11           110265552 dict                 ∘                          ∘                     1048         17 ∘          dict</span>
+<span class="co">#0.12           110264976 dict                 ∘                          ∘                     3352         62 ∘          dict</span>
+<span class="co">#0.13          1023398416 CourseDescriptorWith ∘                          ∘                       64          ∘ ∘          CourseDesc</span>
+<span class="co">#0.14          1023827696 dict                 ∘                          ∘                     1048         15 ∘          dict</span>
+<span class="co">#0.15          1023398352 KvsFieldData         ∘                          ∘                       64          ∘ ∘          KvsFieldDa</span></code></pre>
+<p>Ok, so this <code>KvsFieldData</code> is being held in memory by the <code>XMLModuleStore</code>. Thats not too surprising (we expect many XModules to be held in memory by that Modulestore, in fact). However, in the original investigation, I a different module (not <code>xmodule.modulestore.django</code>, as listed above) was holding on to the pointer to <code>MixedModuleStore</code>. This should never happen, because the <code>MixedModuleStore</code> is supposed to be a single instance, used globally.</p>
+<pre class="sourceCode bash pre-scrollable pre-x-scrollable"><code class="sourceCode bash"><span class="co"># Let's look at the two XMLModuleStores.</span>
+::<span class="kw">&gt;</span> <span class="kw">select</span> <span class="kw">*</span> from obj where type = <span class="st">'XMLModuleStore'</span>
+<span class="co">#                 address type                 name                 value                size        len mark       repr</span>
+<span class="kw">--------</span> ---------------- -------------------- -------------------- -------------- ---------- ---------- ---------- ----------
+<span class="co">#1.0            110810832 XMLModuleStore       ∘                    ∘                      64          ∘ ∘          XMLModuleS</span>
+<span class="co">#1.1            109863312 XMLModuleStore       ∘                    ∘                      64          ∘ ∘          XMLModuleS</span>
+
+<span class="co"># We can find the path to the root for each of them</span>
+::<span class="kw">&gt;</span> <span class="kw">path</span> from <span class="st">&quot;address = 110810832&quot;</span> to <span class="st">&quot;address in 0&amp;&quot;</span> reversed
+<span class="kw">Added</span> 162 paths to newly discovered nodes
+<span class="kw">Added</span> 224 paths to newly discovered nodes
+<span class="kw">Added</span> 73884 paths to newly discovered nodes
+<span class="kw">Added</span> 73698 paths to newly discovered nodes
+<span class="kw">Added</span> 114334 paths to newly discovered nodes
+<span class="kw">Added</span> 40842 paths to newly discovered nodes
+<span class="kw">Added</span> 38 paths to newly discovered nodes
+<span class="kw">Added</span> 38 paths to newly discovered nodes
+<span class="kw">Added</span> 76 paths to newly discovered nodes
+<span class="kw">Added</span> 304 paths to newly discovered nodes
+<span class="kw">Added</span> 304 paths to newly discovered nodes
+<span class="kw">Added</span> 1634 paths to newly discovered nodes
+<span class="kw">Added</span> 1520 paths to newly discovered nodes
+<span class="kw">Added</span> 18278 paths to newly discovered nodes
+<span class="kw">Added</span> 567302 paths to newly discovered nodes
+<span class="co">#                 address type                 name                 value                 size        len mark       repr</span>
+<span class="kw">--------</span> ---------------- -------------------- -------------------- --------------- ---------- ---------- ---------- ----------
+<span class="co">#0.0            110810832 XMLModuleStore       ∘                    ∘                       64          ∘ ∘          XMLModuleS</span>
+<span class="co">#0.1            109985944 list                 ∘                    ∘                      104          3 ∘          list</span>
+<span class="co">#0.2            111043728 dict                 ∘                    ∘                     1048         12 ∘          dict</span>
+<span class="co">#0.3            110780112 MixedModuleStore     ∘                    ∘                       64          ∘ ∘          MixedModul</span>
+<span class="co">#0.4            111033776 dict                 ∘                    ∘                      280          1 ∘          dict</span>
+<span class="co">#0.5            110809360 LibraryToolsService  ∘                    ∘                       64          ∘ ∘          LibraryToo</span>
+<span class="co">#0.6            111031056 dict                 ∘                    ∘                      280          5 ∘          dict</span>
+<span class="co">#0.7            111034352 dict                 ∘                    ∘                     3352         41 ∘          dict</span>
+<span class="co">#0.8            110779280 LmsModuleSystem      ∘                    ∘                       64          ∘ ∘          LmsModuleS</span>
+<span class="co">#0.9            111050032 dict                 ∘                    ∘                     3352         26 ∘          dict</span>
+<span class="co">#0.10           110783296 module               open_ended_grading.u ∘                       56          ∘ ∘          open_ended</span>
+<span class="co">#0.11            12611920 dict                 ∘                    ∘                   786712       6069 ∘          dict</span>
+<span class="co">#0.12            12619664 dict                 ∘                    ∘                     3352         73 ∘          dict</span>
+<span class="co">#0.13     140244885039992 module               sys                  ∘                       56          ∘ ∘          sys</span>
+<span class="co">#0.14            13270096 dict                 ∘                    ∘                     3352         54 ∘          dict</span>
+<span class="co">#0.15          1294669280 frame                ∘                    wait                   512          ∘ ∘          frame</span>
+
+
+::<span class="kw">&gt;</span> <span class="kw">select</span> <span class="kw">*</span> from obj where address = 110783296<span class="kw">;</span>
+<span class="co">#                 address type                 name                           value              size        len mark       repr</span>
+<span class="kw">--------</span> ---------------- -------------------- ------------------------------ ------------ ---------- ---------- ---------- ----------
+<span class="co">#5.0            110783296 module               open_ended_grading.utils       ∘                    56          ∘ ∘          open_ended</span>
+
+
+::<span class="kw">&gt;</span> <span class="kw">path</span> from <span class="st">&quot;address = 109863312&quot;</span> to <span class="st">&quot;address in 0&amp;&quot;</span> reversed
+<span class="kw">Added</span> 162 paths to newly discovered nodes
+<span class="kw">Added</span> 224 paths to newly discovered nodes
+<span class="kw">Added</span> 74284 paths to newly discovered nodes
+<span class="kw">Added</span> 74098 paths to newly discovered nodes
+<span class="kw">Added</span> 114983 paths to newly discovered nodes
+<span class="kw">Added</span> 43125 paths to newly discovered nodes
+<span class="kw">Added</span> 28538 paths to newly discovered nodes
+<span class="kw">Added</span> 70566 paths to newly discovered nodes
+<span class="kw">Added</span> 257640 paths to newly discovered nodes
+<span class="kw">Added</span> 3690598 paths to newly discovered nodes
+<span class="co">#                 address type                 name                 value              size        len mark       repr</span>
+<span class="kw">--------</span> ---------------- -------------------- -------------------- ------------ ---------- ---------- ---------- ----------
+<span class="co">#1.0            109863312 XMLModuleStore       ∘                    ∘                   64          ∘ ∘          XMLModuleS</span>
+<span class="co">#1.1             88367256 list                 ∘                    ∘                  104          3 ∘          list</span>
+<span class="co">#1.2             88505440 dict                 ∘                    ∘                 1048         12 ∘          dict</span>
+<span class="co">#1.3             88346448 MixedModuleStore     ∘                    ∘                   64          ∘ ∘          MixedModul</span>
+<span class="co">#1.4             47993568 dict                 ∘                    ∘                 3352         31 ∘          dict</span>
+<span class="co">#1.5             47884224 module               xmodule.modulestore. ∘                   56          ∘ ∘          xmodule.mo</span>
+<span class="co">#1.6             12611920 dict                 ∘                    ∘               786712       6069 ∘          dict</span>
+<span class="co">#1.7             12619664 dict                 ∘                    ∘                 3352         73 ∘          dict</span>
+<span class="co">#1.8      140244885039992 module               sys                  ∘                   56          ∘ ∘          sys</span>
+<span class="co">#1.9             13270096 dict                 ∘                    ∘                 3352         54 ∘          dict</span>
+<span class="co">#1.10          1294669280 frame                ∘                    wait               512          ∘ ∘          frame</span>
+</code></pre>
+<p>And there it is, the reason for our memory growth: we’re loading XML courses twice into memory, rather than once. But why is <code>open_ended_grading.utils</code> holding on to an <code>XMLModuleStore</code>? Tracing through the chain of references, can see that it is holding an <code>LmsModuleSystem</code> as an attribute (the intervening <code>dict</code> is the modules <code>__dict__</code> attribute). The <code>LmsModuleSystem</code> in turn, has a <code>LibraryToolsService</code>, which points to a <code>MixedModuleStore</code>, which holds the <code>XMLModuleStore</code>.</p>
+<p>To confirm that we understand the source of the leak, we can release what we think is the errant modulestore, and see how much memory it was using.</p>
+<pre class="sourceCode bash pre-scrollable pre-x-scrollable"><code class="sourceCode bash"><span class="co"># Release all references to the XMLModuleStore</span>
+::<span class="kw">&gt;</span> <span class="kw">delete</span> from ref where child = 110810832
+<span class="kw">162</span> rows deleted
+
+<span class="co"># Garbage collect objects</span>
+::<span class="kw">&gt;</span> <span class="kw">gc</span>
+<span class="kw">4121623</span> (4.1M) <span class="kw">objects</span>, 14972515 (15.0M) <span class="kw">references</span>, 1220387792 (1.2G) <span class="kw">total</span> bytes
+<span class="kw">Marked</span> 2940 top level objects
+<span class="kw">Marked</span> 13840 objects at depth 1
+<span class="kw">Marked</span> 6546 objects at depth 2
+<span class="kw">Marked</span> 2322 objects at depth 3
+<span class="kw">Marked</span> 9517 objects at depth 4
+<span class="kw">Marked</span> 13059 objects at depth 5
+<span class="kw">Marked</span> 7879 objects at depth 6
+<span class="kw">Marked</span> 50066 objects at depth 7
+<span class="kw">Marked</span> 78560 objects at depth 8
+<span class="kw">Marked</span> 83168 objects at depth 9
+<span class="kw">Marked</span> 72434 objects at depth 10
+<span class="kw">Marked</span> 25461 objects at depth 11
+<span class="kw">Marked</span> 19124 objects at depth 12
+<span class="kw">Marked</span> 13437 objects at depth 13
+<span class="kw">&lt;snip&gt;</span>
+<span class="kw">Marked</span> 2 objects at depth 431
+<span class="kw">Marked</span> 8 objects at depth 432
+<span class="kw">Marking</span> complete
+<span class="kw">Deleted</span> 1897434 objects
+<span class="kw">2224189</span> (2.2M) <span class="kw">objects</span>, 14972515 (15.0M) <span class="kw">references</span>, 653444692 (653.4M) <span class="kw">total</span> bytes</code></pre>
+<p>Releasing that modulestore freed 650Mb of memory, which accounts for the amount of unexpected memory use we observed on production.</p>
+<p>The next question was why the <code>open_ended_grading.utils</code> was creating a separate copy of the ModuleStores, rather than the global copy. The answer turns out to be that the <code>LmsModuleSystem</code> was created during import, which happened while the global <code>ModuleStore</code> was being initialized. As a result, it couldn’t retrieve the as-yet incomplete global copy of the <code>ModuleStore</code>, and created a new one instead.</p>
+<p><a href="https://github.com/edx/edx-platform/pull/6892">The solution</a> to the leak involved removing the static creation of <code>LmsModuleSystem</code> from the old OpenEndedResponse code.</p>
+<p>In part 2, I’ll detail how I debugged linear memory growth in our offline grading process.</p>
+</section>
+    <aside class="comments">
+        <div id="disqus_thread"></div>
+    </aside>
+</article>
+
+<script type="text/javascript">
+    /* * * CONFIGURATION VARIABLES: EDIT BEFORE PASTING INTO YOUR WEBPAGE * * */
+    var disqus_shortname = 'vengefulpickle'; // required: replace example with your forum shortname
+
+    /* * * DON'T EDIT BELOW THIS LINE * * */
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+
+        </div>
+        <div class="col-lg-2 col-md-12">
+            <aside class="about-me well col-lg-12 col-md-6">
+            My name is <em>Calen Pennington</em>. I'm a <em>software developer</em> and <em>lead architect</em> at <a href="edx.org">edX</a>,
+            <em>father</em> to a two-year old, part-time <em>haskell hacker</em>, <em>board/card/video-gamer</em>. This blog will primarily
+            focus on the first of those.
+            </aside>
+            <aside class="contact well col-lg-12 col-md-6">
+                Find me on:
+                <ul>
+                    <li><a href="https://github.com/cpennington">Github</a></li>
+                    <li><a href="https://twitter.com/vengefulpickle">Twitter</a></li>
+                </ul>
+            </aside>
+        </div>
+        <script src="//code.jquery.com/jquery-2.1.3.min.js"></script>
+        <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/js/bootstrap.min.js"></script>
+        <script>
+            (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+            (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+            m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+            })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+            ga('create', 'UA-59592913-1', 'auto');
+            ga('send', 'pageview');
+
+        </script>
+    </body>
+</html>
