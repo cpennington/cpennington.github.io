@@ -1,7 +1,7 @@
 ---
 title: A Tale of Two Leaks (Part 1)
-published: 2015-02-10 10:40:00PM
-edited: 2015-02-11 11:00:00AM
+published: 2015-02-10
+edited: 2015-02-11
 ---
 
 Over the past several weeks, we've been contending with several memory issues on edx.org.
