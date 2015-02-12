@@ -18,6 +18,18 @@ body {
     padding-bottom: 25px;
 }
 
-.about-me, .contact {
+.about-me, .contact, .posts {
     font-size: 80%;
+}
+
+.posts ul {
+    list-style-type: none;
+    list-style-position: inside;
+    margin: 0;
+    padding: 0;
+}
+
+.posts .post-date {
+    padding-left: 20px;
+    font-size: 90%;
 }

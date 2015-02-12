@@ -1,7 +1,16 @@
 ---
 title: Home
 ---
-
-$partial("templates/post-list.html")$
-
-<p>…or you can find more in the <a href="/archive.html">archives</a>.</p>
+<div class="post-list">
+    $for(posts)$
+        <article class="post-snippet">
+            <header>
+                <h3 class="title"><a href="$url$">$title$</a></h3>
+                <div class="byline">$date$</div>
+            </header>
+            <div class="teaser">
+            $teaser$
+            <a href="$url$">Read more...</a>
+        </article>
+    $endfor$
+</div>

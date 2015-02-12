@@ -1,6 +1,6 @@
 --------------------------------------------------------------------------------
 {-# LANGUAGE OverloadedStrings #-}
-import Data.Monoid (mconcat)
+import Data.Monoid (mconcat, mappend)
 import Hakyll
 import Data.Default (def)
 import System.Environment (getArgs)
@@ -29,7 +29,12 @@ main = do
                 writerSectionDivs = True
                 }
 
+        compilePostListCtx = do
+            posts <- recentFirst =<< loadAllSnapshots postsPattern "content"
+            return $ listField "posts" postCtx (return posts)
+
     hakyllWith config $ do
+
         match "images/*" $ do
             route   idRoute
             compile copyFileCompiler
@@ -38,45 +43,24 @@ main = do
             route   idRoute
             compile compressCssCompiler
 
-        match (fromList ["about.rst", "contact.markdown"]) $ do
-            route   $ setExtension "html"
-            compile $ pandocCompiler
-                >>= loadAndApplyTemplate "templates/default.html" defaultContext
-                >>= relativizeUrls
-
         match postsPattern $ do
             route $ setExtension "html"
-            compile $ pandocCompiler
-                >>= saveSnapshot "content"
-                >>= loadAndApplyTemplate "templates/post.html"    postCtx
-                >>= loadAndApplyTemplate "templates/default.html" postCtx
-                >>= relativizeUrls
-
-        create ["archive.html"] $ do
-            route idRoute
             compile $ do
-                posts <- recentFirst =<< loadAll postsPattern
-                let archiveCtx = mconcat
-                        [ listField "posts" postCtx (return posts)
-                        , constField "title" "Archives"
-                        , constField "archive" "True"
-                        , defaultContext
-                        ]
-
-                makeItem ""
-                    >>= loadAndApplyTemplate "templates/archive.html" archiveCtx
-                    >>= loadAndApplyTemplate "templates/default.html" archiveCtx
+                posts <- pandocCompiler >>= saveSnapshot "content"
+                postListCtx <- compilePostListCtx
+                let context = (postCtx `mappend` postListCtx)
+                loadAndApplyTemplate "templates/post.html" context posts
+                    >>= loadAndApplyTemplate "templates/default.html" context
                     >>= relativizeUrls
-
 
         match "index.html" $ do
             route idRoute
             compile $ do
-                posts <- recentFirst =<< loadAll postsPattern
+                postListCtx <- compilePostListCtx
                 let indexCtx = mconcat
-                        [ listField "posts" postCtx (return posts)
-                        , constField "title" "Home"
+                        [ constField "title" "Home"
                         , constField "home" "True"
+                        , postListCtx
                         , defaultContext
                         ]
 

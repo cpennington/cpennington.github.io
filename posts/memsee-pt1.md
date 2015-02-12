@@ -1,7 +1,7 @@
 ---
 title: A Tale of Two Leaks (Part 1)
 published: 2015-02-10
-edited: 2015-02-11
+edited: 2015-02-12
 ---
 
 Over the past several weeks, we've been contending with several memory issues on edx.org.
@@ -61,15 +61,10 @@ Stable Memory Increase
 ======================
 
 The first memory "leak" seemed less like a classical leak than unintentionally large memory use.
-Our production workers (which used to sit at ~1.2GB of memory) started to consume ~1.8GB during
-a steady state instead. Fortunately, we were able to reproduce the same issue on staging, as well,
+Our production webworks normally use ~1.2GB of memory. After a recent release, their stable memory
+footprint increased to ~1.8GB. Fortunately, we were able to reproduce the same issue on staging, as well,
 shortly after a worker had started. With the help of our devops team, I collected a memory dump
 and began analysis.
-
-The primary tool I used for debugging both of these memory leaks was [memsee][], a small Python
-command written by [Ned] and me for a previous memory leak investigation. In a nutshell, memsee
-is a thin wrapper around a [SQLite][] that adds additional methods and shortcuts for navigating
-the set of objects and references that [meliae][] dumps out.
 
 I've recreated my investigative process (with some dead-ends elided) in memsee below:
 
@@ -117,16 +112,18 @@ Marking top objects... 2940
 #0.1090     1306709 dict
 ~~~
 
-Observe that there are a lot of KvsFieldData objects resident in memory. Let's find
-out what's referencing them.
-Some notes about memsee syntax:
+Observe that there are a lot of KvsFieldData objects resident in memory. These are used as backing
+data storage by all of the XBlocks run in edx-platform, and are a good candidate for holding on
+to a lot of memory. Let's find out what's referencing them.
+
+Recall from <a href="/posts/memsee-intro.html">the memsee introduction</a>:
 
   - `path` takes the form `path from "$where_clause" to "$where_clause"`. The first clause
-    specifies which objects to begin the search from, and the second specifies which objects
-    to terminate on.
-  - `0&` means 'the children of the object at address 0', and 'address 0' is a virtual
-    object that is assumed to be a parent of anything in the system that doesn't already
-    have a parent.
+     specifies which objects to begin the search from, and the second specifies which objects
+     to terminate on.
+  - `0&` means 'the children of the object at address 0', and 'address 0' is treated as the
+     root of the memory hierarchy (memsee adds references from address 0 to any objects that
+     have no references to them during import).
   - `path` only returns the first path it finds from one set of objects to another.
 
 ~~~ {.bash .pre-scrollable .pre-x-scrollable}
@@ -168,7 +165,7 @@ Added 3502907 paths to newly discovered nodes
 ~~~
 
 Ok, so this `KvsFieldData` is being held in memory by the `XMLModuleStore`. Thats not too surprising (we expect
-many XModules to be held in memory by that Modulestore, in fact). However, in the original investigation, I
+many XModules to be held in memory by that Modulestore, in fact). However, in the original investigation,
 a different module (not `xmodule.modulestore.django`, as listed above) was holding on to the pointer to
 `MixedModuleStore`. This should never happen, because the `MixedModuleStore` is supposed to be a single instance,
 used globally.
@@ -307,6 +304,7 @@ In part 2, I'll detail how I debugged linear memory growth in our offline gradin
 [edx-platform]: https://github.com/edx/edx-platform
 [meliae]: https://pypi.python.org/pypi/meliae
 [memsee]: https://github.com/nedbat/memsee
-[Ned Batchelder]: http://nedbatchelder.com/
+[Ned]: http://nedbatchelder.com/
 [gunicorn]: http://gunicorn.org/
 [uWSGI]: https://uwsgi-docs.readthedocs.org/en/latest/
+[SQLite]: https://www.sqlite.org/

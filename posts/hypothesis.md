@@ -1,11 +1,16 @@
 ---
 title: Using Hypothesis
 published: 2015-02-02
-edited: 2015-02-11
+edited: 2015-02-12
 ---
 
-[Hypothesis][] is a library for
-property-based testing in Python.
+One of the difficulties when writing unit tests is picking input data
+(or test cases) that expose all of the potential bugs in your code.
+Often, you write test cases to catch the bugs you know exist (or thought
+about guarding against), but miss the input that would lead to the bugs
+that still exist in your code. An alternative to this is property-based
+testing, where rather than choosing inputs yourself, you let the computer
+choose inputs for you.
 
 Property-based testing is an alternative approach to unit testing
 where rather than describing specific input values and the results
@@ -16,10 +21,12 @@ that fails, or runs out of attempts to do so. The grand-daddy of all
 property-testing libraries is [QuickCheck][], but re-implementations
 exist in many languages.
 
+[Hypothesis][] is a library for property-based testing in Python.
+
 <!--more-->
 
 This testing technique is most directly applicable to pure functions
-(where the output of the function depends only on the output), but
+(where the output of the function depends only on the input), but
 can be used to generate test data for many other types of tests as well.
 
 For instance, in the edX LMS, we have several functions to encode and

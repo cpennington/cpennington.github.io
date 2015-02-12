@@ -7,7 +7,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="description" content="A Meandering Technical Blog">
         <meta name="author" content="Calen Pennington">
-        <title>Vengefulpickle Productions - $title$</title>
+        <title>Vengefulpickle - $title$</title>
         <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css" />
         <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap-theme.min.css" />
 
@@ -16,22 +16,10 @@
     </head>
     <body>
         <header class="navbar navbar-inverse navbar-fixed-top bs-docs-nav" role="banner">
-            <div class="container">
+            <div class="container col-lg-offset-2">
                 <div class="navbar-header">
-                    <button class="navbar-toggle" type="button" data-toggle="collapse" data-target=".bs-navbar-collapse">
-                        <span class="sr-only">Toggle navigation</span>
-                        <span class="icon-bar"></span>
-                        <span class="icon-bar"></span>
-                        <span class="icon-bar"></span>
-                    </button>
-                    <a href="/" class="navbar-brand">Vengefulpickle Productions</a>
+                    <a href="/" class="navbar-brand">Vengefulpickle</a>
                 </div>
-                <nav class="collapse navbar-collapse bs-navbar-collapse" role="navigation">
-                    <ul class="nav navbar-nav">
-                        <li $if(home)$class="active"$endif$><a href="/">Home</a></li>
-                        <li $if(archive)$class="active"$endif$><a href="/archive.html">Archive</a></li>
-                    </ul>
-                </nav>
             </div>
         </header>
 
@@ -39,16 +27,27 @@
             $body$
         </div>
         <div class="col-lg-2 col-md-12">
-            <aside class="about-me well col-lg-12 col-md-6">
+            <aside class="about-me well col-lg-12 col-md-4">
             My name is <em>Calen Pennington</em>. I'm a <em>software developer</em> and <em>lead architect</em> at <a href='edx.org'>edX</a>,
             <em>father</em> to a two-year old, part-time <em>haskell hacker</em>, <em>board/card/video-gamer</em>. This blog will primarily
             focus on the first of those.
             </aside>
-            <aside class="contact well col-lg-12 col-md-6">
+            <aside class="contact well col-lg-12 col-md-4">
                 Find me on:
                 <ul>
                     <li><a href="https://github.com/cpennington">Github</a></li>
                     <li><a href="https://twitter.com/vengefulpickle">Twitter</a></li>
+                </ul>
+            </aside>
+            <aside class="posts well col-lg-12 col-md-4">
+                <h4>Recent Posts</h4>
+                <ul class="post-list">
+                    $for(posts)$
+                        <li>
+                            <a href="$url$">$title$</a>
+                            <div class="post-date">$date$</div>
+                        </li>
+                    $endfor$
                 </ul>
             </aside>
         </div>
