@@ -6,7 +6,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="description" content="A Meandering Technical Blog">
         <meta name="author" content="Calen Pennington">
-        <title>Vengefulpickle Productions - Using Hypothesis</title>
+        <title>Vengefulpickle - Using Hypothesis</title>
         <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css" />
         <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap-theme.min.css" />
 
@@ -15,22 +15,10 @@
     </head>
     <body>
         <header class="navbar navbar-inverse navbar-fixed-top bs-docs-nav" role="banner">
-            <div class="container">
+            <div class="container col-lg-offset-2">
                 <div class="navbar-header">
-                    <button class="navbar-toggle" type="button" data-toggle="collapse" data-target=".bs-navbar-collapse">
-                        <span class="sr-only">Toggle navigation</span>
-                        <span class="icon-bar"></span>
-                        <span class="icon-bar"></span>
-                        <span class="icon-bar"></span>
-                    </button>
-                    <a href="../" class="navbar-brand">Vengefulpickle Productions</a>
+                    <a href="../" class="navbar-brand">Vengefulpickle</a>
                 </div>
-                <nav class="collapse navbar-collapse bs-navbar-collapse" role="navigation">
-                    <ul class="nav navbar-nav">
-                        <li><a href="../">Home</a></li>
-                        <li class="active"><a href="../archive.html">Archive</a></li>
-                    </ul>
-                </nav>
             </div>
         </header>
 
@@ -44,10 +32,11 @@
         </div>
     </header>
 
-    <p><a href="https://github.com/DRMacIver/hypothesis">Hypothesis</a> is a library for property-based testing in Python.</p>
+    <p>One of the difficulties when writing unit tests is picking input data (or test cases) that expose all of the potential bugs in your code. Often, you write test cases to catch the bugs you know exist (or thought about guarding against), but miss the input that would lead to the bugs that still exist in your code. An alternative to this is property-based testing, where rather than choosing inputs yourself, you let the computer choose inputs for you.</p>
 <p>Property-based testing is an alternative approach to unit testing where rather than describing specific input values and the results of executing operations on those values, you instead write a test that should be true of <em>all</em> input data of a certain form, and then let the test framework feed in data until it either finds an example that fails, or runs out of attempts to do so. The grand-daddy of all property-testing libraries is <a href="https://hackage.haskell.org/package/QuickCheck">QuickCheck</a>, but re-implementations exist in many languages.</p>
+<p><a href="https://github.com/DRMacIver/hypothesis">Hypothesis</a> is a library for property-based testing in Python.</p>
 <!--more-->
-<p>This testing technique is most directly applicable to pure functions (where the output of the function depends only on the output), but can be used to generate test data for many other types of tests as well.</p>
+<p>This testing technique is most directly applicable to pure functions (where the output of the function depends only on the input), but can be used to generate test data for many other types of tests as well.</p>
 <p>For instance, in the edX LMS, we have several functions to encode and decode strings with <code>/</code> in them.</p>
 <pre class="sourceCode python"><code class="sourceCode python"><span class="kw">def</span> _quote_slashes(match):
     <span class="co">&quot;&quot;&quot;</span>
@@ -209,16 +198,37 @@
 
         </div>
         <div class="col-lg-2 col-md-12">
-            <aside class="about-me well col-lg-12 col-md-6">
+            <aside class="about-me well col-lg-12 col-md-4">
             My name is <em>Calen Pennington</em>. I'm a <em>software developer</em> and <em>lead architect</em> at <a href="edx.org">edX</a>,
             <em>father</em> to a two-year old, part-time <em>haskell hacker</em>, <em>board/card/video-gamer</em>. This blog will primarily
             focus on the first of those.
             </aside>
-            <aside class="contact well col-lg-12 col-md-6">
+            <aside class="contact well col-lg-12 col-md-4">
                 Find me on:
                 <ul>
                     <li><a href="https://github.com/cpennington">Github</a></li>
                     <li><a href="https://twitter.com/vengefulpickle">Twitter</a></li>
+                </ul>
+            </aside>
+            <aside class="posts well col-lg-12 col-md-4">
+                <h4>Recent Posts</h4>
+                <ul class="post-list">
+                    
+                        <li>
+                            <a href="../posts/memsee-pt1.html">A Tale of Two Leaks: A Static Leak</a>
+                            <div class="post-date">February 10, 2015</div>
+                        </li>
+                    
+                        <li>
+                            <a href="../posts/memsee-intro.html">A Tale of Two Leaks: An Introduction to Memsee</a>
+                            <div class="post-date">February 10, 2015</div>
+                        </li>
+                    
+                        <li>
+                            <a href="../posts/hypothesis.html">Using Hypothesis</a>
+                            <div class="post-date">February  2, 2015</div>
+                        </li>
+                    
                 </ul>
             </aside>
         </div>

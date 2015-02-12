@@ -6,7 +6,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="description" content="A Meandering Technical Blog">
         <meta name="author" content="Calen Pennington">
-        <title>Vengefulpickle Productions - A Tale of Two Leaks (Part 1)</title>
+        <title>Vengefulpickle - A Tale of Two Leaks: A Static Leak</title>
         <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css" />
         <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap-theme.min.css" />
 
@@ -15,36 +15,25 @@
     </head>
     <body>
         <header class="navbar navbar-inverse navbar-fixed-top bs-docs-nav" role="banner">
-            <div class="container">
+            <div class="container col-lg-offset-2">
                 <div class="navbar-header">
-                    <button class="navbar-toggle" type="button" data-toggle="collapse" data-target=".bs-navbar-collapse">
-                        <span class="sr-only">Toggle navigation</span>
-                        <span class="icon-bar"></span>
-                        <span class="icon-bar"></span>
-                        <span class="icon-bar"></span>
-                    </button>
-                    <a href="../" class="navbar-brand">Vengefulpickle Productions</a>
+                    <a href="../" class="navbar-brand">Vengefulpickle</a>
                 </div>
-                <nav class="collapse navbar-collapse bs-navbar-collapse" role="navigation">
-                    <ul class="nav navbar-nav">
-                        <li><a href="../">Home</a></li>
-                        <li class="active"><a href="../archive.html">Archive</a></li>
-                    </ul>
-                </nav>
             </div>
         </header>
 
         <div id="body" class="container col-lg-6 col-lg-offset-2">
             <article>
     <header>
-        <h1>A Tale of Two Leaks (Part 1)</h1>
+        <h1>A Tale of Two Leaks: A Static Leak</h1>
         <div class="byline">
             Posted on February 10, 2015
             
         </div>
     </header>
 
-    <p>Over the past several weeks, we’ve been contending with several memory issues on edx.org. The first manifested as a sudden increase in the resting memory footprint of our production web-processes. The second presented as a classic memory leak while doing offline grading of an entire course. In this post, I’ll go though the steps and tools we used to identify the causes of the first of these leaks.</p>
+    <p>This is the second of a 3-part series on memory leaks in <a href="https://github.com/edx/edx-platform">edx-platform</a>. Read <a href="../posts/memsee-intro.html">the first part</a> for an introduction to memsee, the tool I used for much of my debugging.</p>
+<p>Over the past several weeks, we’ve been contending with several memory issues on edx.org. The first manifested as a sudden increase in the resting memory footprint of our production web-processes. The second presented as a classic memory leak while doing offline grading of an entire course. In this post, I’ll go though the steps and tools we used to identify the causes of the first of these leaks.</p>
 <!--more-->
 <section id="instrumentation" class="level1">
 <h1>Instrumentation</h1>
@@ -77,8 +66,7 @@ openedx.core.operations.install_memory_dumper()
 </section>
 <section id="stable-memory-increase" class="level1">
 <h1>Stable Memory Increase</h1>
-<p>The first memory “leak” seemed less like a classical leak than unintentionally large memory use. Our production workers (which used to sit at ~1.2GB of memory) started to consume ~1.8GB during a steady state instead. Fortunately, we were able to reproduce the same issue on staging, as well, shortly after a worker had started. With the help of our devops team, I collected a memory dump and began analysis.</p>
-<p>The primary tool I used for debugging both of these memory leaks was <a href="https://github.com/nedbat/memsee">memsee</a>, a small Python command written by [Ned] and me for a previous memory leak investigation. In a nutshell, memsee is a thin wrapper around a [SQLite][] that adds additional methods and shortcuts for navigating the set of objects and references that <a href="https://pypi.python.org/pypi/meliae">meliae</a> dumps out.</p>
+<p>The first memory “leak” seemed less like a classical leak than unintentionally large memory use. Our production webworks normally use ~1.2GB of memory. After a recent release, their stable memory footprint increased to ~1.8GB. Fortunately, we were able to reproduce the same issue on staging, as well, shortly after a worker had started. With the help of our devops team, I collected a memory dump and began analysis.</p>
 <p>I’ve recreated my investigative process (with some dead-ends elided) in memsee below:</p>
 <pre class="sourceCode bash pre-scrollable pre-x-scrollable"><code class="sourceCode bash"><span class="kw">&gt;</span> <span class="kw">python</span> memsee.py
 <span class="co"># Initialized a database to store the dump</span>
@@ -121,10 +109,11 @@ openedx.core.operations.install_memory_dumper()
 <span class="co">#0.1088      404395 unicode</span>
 <span class="co">#0.1089     1006998 str</span>
 <span class="co">#0.1090     1306709 dict</span></code></pre>
-<p>Observe that there are a lot of KvsFieldData objects resident in memory. Let’s find out what’s referencing them. Some notes about memsee syntax:</p>
+<p>Observe that there are a lot of KvsFieldData objects resident in memory. These are used as backing data storage by all of the XBlocks run in edx-platform, and are a good candidate for holding on to a lot of memory. Let’s find out what’s referencing them.</p>
+<p>Recall from <a href="../posts/memsee-intro.html">the memsee introduction</a>:</p>
 <ul>
 <li><code>path</code> takes the form <code>path from &quot;$where_clause&quot; to &quot;$where_clause&quot;</code>. The first clause specifies which objects to begin the search from, and the second specifies which objects to terminate on.</li>
-<li><code>0&amp;</code> means ‘the children of the object at address 0’, and ‘address 0’ is a virtual object that is assumed to be a parent of anything in the system that doesn’t already have a parent.</li>
+<li><code>0&amp;</code> means ‘the children of the object at address 0’, and ‘address 0’ is treated as the root of the memory hierarchy (memsee adds references from address 0 to any objects that have no references to them during import).</li>
 <li><code>path</code> only returns the first path it finds from one set of objects to another.</li>
 </ul>
 <pre class="sourceCode bash pre-scrollable pre-x-scrollable"><code class="sourceCode bash">::<span class="kw">&gt;</span> <span class="kw">path</span> from <span class="st">&quot;address in 0&amp;&quot;</span> to <span class="st">&quot;type = 'KvsFieldData'&quot;</span>
@@ -162,7 +151,7 @@ openedx.core.operations.install_memory_dumper()
 <span class="co">#0.13          1023398416 CourseDescriptorWith ∘                          ∘                       64          ∘ ∘          CourseDesc</span>
 <span class="co">#0.14          1023827696 dict                 ∘                          ∘                     1048         15 ∘          dict</span>
 <span class="co">#0.15          1023398352 KvsFieldData         ∘                          ∘                       64          ∘ ∘          KvsFieldDa</span></code></pre>
-<p>Ok, so this <code>KvsFieldData</code> is being held in memory by the <code>XMLModuleStore</code>. Thats not too surprising (we expect many XModules to be held in memory by that Modulestore, in fact). However, in the original investigation, I a different module (not <code>xmodule.modulestore.django</code>, as listed above) was holding on to the pointer to <code>MixedModuleStore</code>. This should never happen, because the <code>MixedModuleStore</code> is supposed to be a single instance, used globally.</p>
+<p>Ok, so this <code>KvsFieldData</code> is being held in memory by the <code>XMLModuleStore</code>. Thats not too surprising (we expect many XModules to be held in memory by that Modulestore, in fact). However, in the original investigation, a different module (not <code>xmodule.modulestore.django</code>, as listed above) was holding on to the pointer to <code>MixedModuleStore</code>. This should never happen, because the <code>MixedModuleStore</code> is supposed to be a single instance, used globally.</p>
 <pre class="sourceCode bash pre-scrollable pre-x-scrollable"><code class="sourceCode bash"><span class="co"># Let's look at the two XMLModuleStores.</span>
 ::<span class="kw">&gt;</span> <span class="kw">select</span> <span class="kw">*</span> from obj where type = <span class="st">'XMLModuleStore'</span>
 <span class="co">#                 address type                 name                 value                size        len mark       repr</span>
@@ -292,16 +281,37 @@ openedx.core.operations.install_memory_dumper()
 
         </div>
         <div class="col-lg-2 col-md-12">
-            <aside class="about-me well col-lg-12 col-md-6">
+            <aside class="about-me well col-lg-12 col-md-4">
             My name is <em>Calen Pennington</em>. I'm a <em>software developer</em> and <em>lead architect</em> at <a href="edx.org">edX</a>,
             <em>father</em> to a two-year old, part-time <em>haskell hacker</em>, <em>board/card/video-gamer</em>. This blog will primarily
             focus on the first of those.
             </aside>
-            <aside class="contact well col-lg-12 col-md-6">
+            <aside class="contact well col-lg-12 col-md-4">
                 Find me on:
                 <ul>
                     <li><a href="https://github.com/cpennington">Github</a></li>
                     <li><a href="https://twitter.com/vengefulpickle">Twitter</a></li>
+                </ul>
+            </aside>
+            <aside class="posts well col-lg-12 col-md-4">
+                <h4>Recent Posts</h4>
+                <ul class="post-list">
+                    
+                        <li>
+                            <a href="../posts/memsee-pt1.html">A Tale of Two Leaks: A Static Leak</a>
+                            <div class="post-date">February 10, 2015</div>
+                        </li>
+                    
+                        <li>
+                            <a href="../posts/memsee-intro.html">A Tale of Two Leaks: An Introduction to Memsee</a>
+                            <div class="post-date">February 10, 2015</div>
+                        </li>
+                    
+                        <li>
+                            <a href="../posts/hypothesis.html">Using Hypothesis</a>
+                            <div class="post-date">February  2, 2015</div>
+                        </li>
+                    
                 </ul>
             </aside>
         </div>
