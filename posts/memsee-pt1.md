@@ -1,8 +1,12 @@
 ---
-title: A Tale of Two Leaks (Part 1)
+title: A Tale of Two Leaks: A Static Leak
 published: 2015-02-10
 edited: 2015-02-12
 ---
+
+This is the second of a 3-part series on memory leaks in [edx-platform][]. Read
+[the first part](/posts/memsee-intro.html) for an introduction to memsee, the
+tool I used for much of my debugging.
 
 Over the past several weeks, we've been contending with several memory issues on edx.org.
 The first manifested as a sudden increase in the resting memory footprint of our production
