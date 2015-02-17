@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="description" content="A Meandering Technical Blog">
+        <meta name="author" content="Calen Pennington">
+        <title>Vengefulpickle - A Tale of Two Leaks: An Incremental Leak</title>
+        <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap.min.css" />
+        <link rel="stylesheet" type="text/css" href="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/css/bootstrap-theme.min.css" />
+
+        <link rel="stylesheet" type="text/css" href="../css/default.css" />
+        <link rel="stylesheet" type="text/css" href="../css/syntax.css" />
+    </head>
+    <body>
+        <header class="navbar navbar-inverse navbar-fixed-top bs-docs-nav" role="banner">
+            <div class="container col-lg-offset-2">
+                <div class="navbar-header">
+                    <a href="../" class="navbar-brand">Vengefulpickle</a>
+                </div>
+            </div>
+        </header>
+
+        <div id="body" class="container col-lg-6 col-lg-offset-2">
+            <article>
+    <header>
+        <h1>A Tale of Two Leaks: An Incremental Leak</h1>
+        <div class="byline">
+            Posted on February 17, 2015
+            
+        </div>
+    </header>
+
+    <p>In <a href="../posts/memsee-pt1.html">part 1</a>, we saw a memory leak that was in some sense static: The memory use was unintentional/undesired, but it was only allocated once, and didn’t get worse as the process continued. On the other hand, the second leak was a true leak in the classic sense: the memory use appeared to be unbounded.</p>
+<!--more-->
+<p>Adam, the lead sustaining engineer at <a href="https://www.edx.org/">edX</a>, and Ed, our Devops lead, were able to identify that the leak happened during our bulk-grading operations. During grading, we loop through every student in a single and then loop through every gradable <a href="https://github.com/edx/xblock">XBlock</a> to identify whether we’ve already scored that XBlock, and if not, we score the student on that block. Then we aggregate all of those grades based on the course’s grading policy.</p>
+<p>Adam was able to narrow down the problem by creating a test case that graded a single student repeatedly. That test showed the same unbounded memory growth we observed in the overall process. Using <a href="http://mg.pov.lt/objgraph/">objgraph</a>, he was able to identify that each time the student was graded, a constant number of <code>CombinedSystems</code> were created and not released. This was suspicious, as those objects were intended to be ephemeral objects intended only to combine the attributes of <code>DescriptorSystem</code> and <code>ModuleSystem</code> into a single object.</p>
+<p>Adam was also to dump the processes memory with [meliae][], after it had leaked memory, so we were able to dig more into the particulars of the <code>CombinedSystems</code> that were still held in memory.</p>
+<section id="investigating-the-memory-dump" class="level1">
+<h1>Investigating the Memory Dump</h1>
+<p>Once we had a dump, I was able to begin investigating with [memsee][]. My first attempt was to use the <code>path</code> command that pointed to the errant pointer in <a href="../posts/memsee-pt1.html">part 1</a>. However, all of those attempts timed out before they found any path from the root to an <code>CombinedSystem</code>.</p>
+<pre class="sourceCode sql"><code class="sourceCode sql">::&gt; <span class="kw">select</span> * <span class="kw">from</span> obj <span class="kw">where</span> <span class="kw">type</span> = <span class="st">'CombinedSystem'</span>;
+#                 address <span class="kw">type</span>                 name                 <span class="fu">value</span>                                                              <span class="kw">size</span>        len mark       repr
+<span class="co">-------- ---------------- -------------------- -------------------- ------------------------------------------------------------ ---------- ---------- ---------- ----------</span>
+#<span class="fl">1.0</span>            <span class="dv">270528592</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+#<span class="fl">1.1</span>            <span class="dv">256545552</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+#<span class="fl">1.2</span>            <span class="dv">239994960</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+&lt;snip&gt;
+#<span class="fl">1.1021</span>         <span class="dv">210278800</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+#<span class="fl">1.1022</span>         <span class="dv">196178640</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+#<span class="fl">1.1023</span>         <span class="dv">179498384</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+#<span class="fl">1.1024</span>         <span class="dv">166197904</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+#<span class="fl">1.1025</span>         <span class="dv">149917968</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy</code></pre>
+<p>Picking an arbitrary <code>CombinedSystem</code>, we can find out what’s pointing to it.</p>
+<pre class="sourceCode sql"><code class="sourceCode sql">::&gt; parents <span class="dv">149917968</span>
+(<span class="dv">151461744</span>, u<span class="st">'dict'</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">3352</span>, <span class="dv">45</span>)
+::&gt; parents <span class="dv">151461744</span>
+(<span class="dv">149920464</span>, u<span class="st">'LmsModuleSystem'</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">64</span>, <span class="kw">None</span>)</code></pre>
+<p>The first <code>dict</code> is just <code>__dict__</code> from the the <code>LmsModuleSystem</code>. Given that the <code>CombinedSystems</code> are just supposed to be pointing to a <code>DescriptorSystem</code> and <code>ModuleSystem</code>, it’s suspicious that a <code>CombinedSystem</code> is being held in memory in turn by an <code>LmsModuleSystem</code>.</p>
+<p>We can keep tracking the parents upwards:</p>
+<pre class="sourceCode sql"><code class="sourceCode sql">::&gt; parents <span class="dv">149920464</span>
+(<span class="dv">166197904</span>, u<span class="st">'CombinedSystem'</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">64</span>, <span class="kw">None</span>)
+(<span class="dv">151176912</span>, u<span class="st">'dict'</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">280</span>, <span class="dv">1</span>)
+(<span class="dv">150230496</span>, u<span class="st">'dict'</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">1048</span>, <span class="dv">9</span>)
+::&gt; parents <span class="dv">166197904</span>
+(<span class="dv">166753712</span>, u<span class="st">'dict'</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">3352</span>, <span class="dv">45</span>)
+::&gt; parents <span class="dv">166753712</span>
+(<span class="dv">166196048</span>, u<span class="st">'LmsModuleSystem'</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">64</span>, <span class="kw">None</span>)</code></pre>
+<p>It looks like we have a chain of <code>LmsModuleSystem -&gt; CombinedSystem -&gt; LmsModuleSystem</code>. (A side note about python memory management: <code>CombinedSystem</code> appears as a direct parent of <code>LmsModuleSystem</code>, with no intervening <code>dict</code> because <code>CombinedSystem</code> defines its attributes using <code>__slots__</code>. This is a good strategy for ephemeral objects, as it saves you from allocating additional dictionaries.)</p>
+</section>
+<section id="designing-a-fix" class="level1">
+<h1>Designing a Fix</h1>
+<p>Looking at the relevant <code>edx-platform</code> code, there’s only one place where <code>CombinedSystems</code> are constructed:</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="co"># edx-platform/common/lib/xmodule/xmodule/x_module.py</span>
+
+<span class="kw">class</span> XModuleMixin(XBlockMixin):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    Fields and methods used by XModules internally.</span>
+
+<span class="co">    Adding this Mixin to an :class:`XBlock` allows it to cooperate with old-style :class:`XModules`</span>
+<span class="co">    &quot;&quot;&quot;</span>
+
+    ...
+
+    <span class="ot">@property</span>
+    <span class="kw">def</span> runtime(<span class="ot">self</span>):
+        <span class="kw">return</span> CombinedSystem(<span class="ot">self</span>.xmodule_runtime, <span class="ot">self</span>._runtime)</code></pre>
+<p><code>XModuleMixin</code> is used added as a base class for all XBlocks used in <code>edx-platform</code>. So, whatever is capturing <code>CombinedSystem</code> in <code>LmsModuleSystem</code>, it’s coming from a call to <code>.runtime</code>.</p>
+<p>The constructor for <code>ModuleSystem</code> (the base-class for <code>LmsModuleSystem</code>) takes a <code>descriptor_runtime</code> argument:</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="co"># edx-platform/common/lib/xmodule/xmodule/x_module.py</span>
+
+<span class="kw">class</span> ModuleSystem(MetricsMixin, ConfigurableFragmentWrapper, Runtime):
+    <span class="kw">def</span> <span class="ot">__init__</span>(<span class="ot">self</span>, ..., descriptor_runtime, ...):
+        ...
+        <span class="ot">self</span>.descriptor_runtime = descriptor_runtime</code></pre>
+<p>This seems like a good candidate for something that would be storing a <code>CombinedSystem</code>. In fact, looking at <code>module_render.py</code>, which is the primary entry point in the LMS for working with XBlocks, we see that we’re passing <code>descriptor.runtime</code> in to that argument:</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="co"># edx-platform/lms/djangoapps/courseware/module_render.py</span>
+
+<span class="kw">def</span> get_module_system_for_user(...):
+    system = LmsModuleSystem(
+        ...
+        descriptor_runtime=descriptor.runtime,
+        ...
+    )</code></pre>
+<p>We find the last piece of the puzzle by looking at what happens to the <code>LmsModuleSystem</code> once it’s constructed.</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="co"># edx-platform/lms/djangoapps/courseware/module_render.py</span>
+
+<span class="kw">def</span> get_module_for_descriptor_internal(user, descriptor, ...):
+    (system, field_data) = get_module_system_for_user(
+        user=user,
+        descriptor=descriptor,
+        ...
+    )
+
+    descriptor.bind_for_student(system, field_data)  <span class="co"># pylint: disable=protected-access</span>
+
+<span class="co"># edx-platform/common/lib/xmodule/xmodule/x_module.py</span>
+
+    <span class="kw">def</span> bind_for_student(<span class="ot">self</span>, xmodule_runtime, field_data):
+        <span class="ot">self</span>.xmodule_runtime = xmodule_runtime</code></pre>
+<p>So, now consider what happens during grading, when we have the same XBlock being bound to different users (or re-bound to the same user) over the course of the grading session:</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="co"># Before grading step</span>
+
+        +----------+
+        |descriptor|
+        +----------+
+
+<span class="co"># LmsModuleSystem(descriptor_runtime=descriptor.runtime)  ## get_module_system_for_user</span>
+
+        +----------+   +---------------+
+        |descriptor|   |CombinedSystem |
+        +----------+   +-^-------------+
+                         |
+                         |descriptor_runtime
+                         |
+                       +-+-------------+
+                       |LmsModuleSystem|
+                       +---------------+
+
+<span class="co"># self.xmodule_runtime = xmodule_runtime   ## bind_for_student</span>
+
+        +----------+   +---------------+
+        |descriptor|   |CombinedSystem |
+        +------+---+   +-^-------------+
+               |         |
+xmodule_runtime|         |descriptor_runtime
+               |         |
+               |       +-+-------------+
+               +-------&gt;LmsModuleSystem|
+                       +---------------+
+
+<span class="co"># LmsModuleSystem(descriptor_runtime=descriptor.runtime)  ## get_module_system_for_user                                                              </span>
+
+        +----------+   +---------------+
+        |descriptor|   |CombinedSystem |
+        +------+---+   +-^-------------+
+               |         |
+xmodule_runtime|         |descriptor_runtime
+               |         |
+               |       +-+-------------+
+               +-------&gt;LmsModuleSystem|
+                       +-^-------------+
+                         |
+                         |_runtime
+                         |
+                       +-+-------------+
+                       |CombinedSystem |
+                       +-^-------------+
+                         |
+                         |descriptor_runtime
+                         |
+                       +-+-------------+
+                       |LmsModuleSystem|
+                       +---------------+
+
+<span class="co"># self.xmodule_runtime = xmodule_runtime   ## bind_for_student</span>
+
+        +----------+   +---------------+
+        |descriptor|   |CombinedSystem |
+        +------+---+   +-^-------------+
+               |         |
+xmodule_runtime|         |descriptor_runtime
+               |         |
+               |       +-+-------------+
+               |       |LmsModuleSystem|
+               |       +-^-------------+
+               |         |
+               |         |_runtime
+               |         |
+               |       +-+-------------+
+               |       |CombinedSystem |
+               |       +-^-------------+
+               |         |
+               |         |descriptor_runtime
+               |         |
+               |       +-+-------------+
+               +-------&gt;LmsModuleSystem|
+                       +---------------+</code></pre>
+<p>In the end, we’re building up a chain of <code>LmsModuleSystems</code> and <code>CombinedSystems</code>, and never releasing them.</p>
+<p>The initial fix to this was to extract actual <code>DescriptorSystem</code> from the <code>CombinedSystem</code>, and passing that to the <code>LmsModuleSystem</code>. That ensures that the references to the previous <code>LmsModuleSystem</code> is released when <code>xmodule_runtime</code> is re-bound. The code to make that change is in <a href="https://github.com/edx/edx-platform/pull/6930/files">this pr</a>.</p>
+<p>A more robust fix would be for <code>ModuleSystem</code> to expect a pointer to a descriptor, rather than the descriptor runtime, so that it can extract the <code>DescriptorSystem</code> from the <code>CombinedSystem</code> itself.</p>
+</section>
+    <aside class="comments">
+        <div id="disqus_thread"></div>
+    </aside>
+</article>
+
+<script type="text/javascript">
+    /* * * CONFIGURATION VARIABLES: EDIT BEFORE PASTING INTO YOUR WEBPAGE * * */
+    var disqus_shortname = 'vengefulpickle'; // required: replace example with your forum shortname
+
+    /* * * DON'T EDIT BELOW THIS LINE * * */
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+
+        </div>
+        <div class="col-lg-2 col-md-12">
+            <aside class="about-me well col-lg-12 col-md-4">
+            My name is <strong>Calen Pennington</strong>. I'm a <em>software developer</em> and <em>lead architect</em> at <a href="edx.org">edX</a>,
+            <em>father</em> to a two-year old, part-time <em>haskell hacker</em>, <em>board/card/video-gamer</em>. This blog will primarily
+            focus on the first of those.
+            </aside>
+            <aside class="contact well col-lg-12 col-md-4">
+                Find me on:
+                <ul>
+                    <li><a href="https://github.com/cpennington">Github</a></li>
+                    <li><a href="https://twitter.com/vengefulpickle">Twitter</a></li>
+                </ul>
+            </aside>
+            <aside class="posts well col-lg-12 col-md-4">
+                <h4>Recent Posts</h4>
+                <ul class="post-list">
+                    
+                        <li>
+                            <a href="../posts/memsee-pt2.html">A Tale of Two Leaks: An Incremental Leak</a>
+                            <div class="post-date">February 17, 2015</div>
+                        </li>
+                    
+                        <li>
+                            <a href="../posts/memsee-pt1.html">A Tale of Two Leaks: A Static Leak</a>
+                            <div class="post-date">February 10, 2015</div>
+                        </li>
+                    
+                        <li>
+                            <a href="../posts/memsee-intro.html">A Tale of Two Leaks: An Introduction to Memsee</a>
+                            <div class="post-date">February 10, 2015</div>
+                        </li>
+                    
+                        <li>
+                            <a href="../posts/hypothesis.html">Using Hypothesis</a>
+                            <div class="post-date">February  2, 2015</div>
+                        </li>
+                    
+                </ul>
+            </aside>
+        </div>
+        <script src="//code.jquery.com/jquery-2.1.3.min.js"></script>
+        <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.3.2/js/bootstrap.min.js"></script>
+        <script>
+            (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+            (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+            m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+            })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+            ga('create', 'UA-59592913-1', 'auto');
+            ga('send', 'pageview');
+
+        </script>
+    </body>
+</html>
