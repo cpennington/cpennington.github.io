@@ -44,17 +44,16 @@
 <h1>Investigating the Memory Dump</h1>
 <p>Once we had a dump, I was able to begin investigating with <a href="https://github.com/nedbat/memsee">memsee</a>. My first attempt was to use the <code>path</code> command that pointed to the errant pointer in <a href="../posts/memsee-pt1.html">part 1</a>. However, all of those attempts timed out before they found any path from the root to an <code>CombinedSystem</code>.</p>
 <pre class="sourceCode sql"><code class="sourceCode sql">::&gt; <span class="kw">select</span> * <span class="kw">from</span> obj <span class="kw">where</span> <span class="kw">type</span> = <span class="st">'CombinedSystem'</span>;
-#                 address <span class="kw">type</span>                 name                 <span class="fu">value</span>                                                              <span class="kw">size</span>        len mark       repr
-<span class="co">-------- ---------------- -------------------- -------------------- ------------------------------------------------------------ ---------- ---------- ---------- ----------</span>
-#<span class="fl">1.0</span>            <span class="dv">270528592</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
-#<span class="fl">1.1</span>            <span class="dv">256545552</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
-#<span class="fl">1.2</span>            <span class="dv">239994960</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
-&lt;snip&gt;
-#<span class="fl">1.1021</span>         <span class="dv">210278800</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
-#<span class="fl">1.1022</span>         <span class="dv">196178640</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
-#<span class="fl">1.1023</span>         <span class="dv">179498384</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
-#<span class="fl">1.1024</span>         <span class="dv">166197904</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
-#<span class="fl">1.1025</span>         <span class="dv">149917968</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy</code></pre>
+#                 address <span class="kw">type</span>                 name   <span class="fu">value</span>    <span class="kw">size</span>    len mark       repr
+<span class="co">-------- ---------------- -------------------- ------ ------ ------ ------ ---------- ----------</span>
+#<span class="fl">1.0</span>            <span class="dv">270528592</span> CombinedSystem       ∘      ∘          <span class="dv">64</span>      ∘ ∘          CombinedSy
+#<span class="fl">1.1</span>            <span class="dv">256545552</span> CombinedSystem       ∘      ∘          <span class="dv">64</span>      ∘ ∘          CombinedSy
+#<span class="fl">1.2</span>            <span class="dv">239994960</span> CombinedSystem       ∘      ∘          <span class="dv">64</span>      ∘ ∘          CombinedSy
+#<span class="fl">1.1021</span>         <span class="dv">210278800</span> CombinedSystem       ∘      ∘          <span class="dv">64</span>      ∘ ∘          CombinedSy
+#<span class="fl">1.1022</span>         <span class="dv">196178640</span> CombinedSystem       ∘      ∘          <span class="dv">64</span>      ∘ ∘          CombinedSy
+#<span class="fl">1.1023</span>         <span class="dv">179498384</span> CombinedSystem       ∘      ∘          <span class="dv">64</span>      ∘ ∘          CombinedSy
+#<span class="fl">1.1024</span>         <span class="dv">166197904</span> CombinedSystem       ∘      ∘          <span class="dv">64</span>      ∘ ∘          CombinedSy
+#<span class="fl">1.1025</span>         <span class="dv">149917968</span> CombinedSystem       ∘      ∘          <span class="dv">64</span>      ∘ ∘          CombinedSy</code></pre>
 <p>Picking an arbitrary <code>CombinedSystem</code>, we can find out what’s pointing to it.</p>
 <pre class="sourceCode sql"><code class="sourceCode sql">::&gt; parents <span class="dv">149917968</span>
 (<span class="dv">151461744</span>, u<span class="st">'dict'</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">3352</span>, <span class="dv">45</span>)
