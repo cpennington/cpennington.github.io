@@ -1,0 +1,713 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+    <channel>
+        <title>Vengefulpickle</title>
+        <link>http://vengefulpickle.com</link>
+        <description><![CDATA[The personal, technical blog for Calen Pennington]]></description>
+        <atom:link href="http://vengefulpickle.com/rss.xml" rel="self"
+                   type="application/rss+xml" />
+        <lastBuildDate>Tue, 17 Feb 2015 00:00:00 UT</lastBuildDate>
+        <item>
+    <title>A Tale of Two Leaks: An Incremental Leak</title>
+    <link>http://vengefulpickle.com/posts/memsee-pt2.html</link>
+    <description><![CDATA[<p>In <a href="/posts/memsee-pt1.html">part 1</a>, we saw a memory leak that was in some sense static: The memory use was unintentional/undesired, but it was only allocated once, and didn’t get worse as the process continued. On the other hand, the second leak was a true leak in the classic sense: the memory use appeared to be unbounded.</p>
+<!--more-->
+<p>Adam, the lead sustaining engineer at <a href="https://www.edx.org/">edX</a>, and Ed, our Devops lead, were able to identify that the leak happened during our bulk-grading operations. During grading, we loop through every student in a single and then loop through every gradable <a href="https://github.com/edx/xblock">XBlock</a> to identify whether we’ve already scored that XBlock, and if not, we score the student on that block. Then we aggregate all of those grades based on the course’s grading policy.</p>
+<p>Adam was able to narrow down the problem by creating a test case that graded a single student repeatedly. That test showed the same unbounded memory growth we observed in the overall process. Using <a href="http://mg.pov.lt/objgraph/">objgraph</a>, he was able to identify that each time the student was graded, a constant number of <code>CombinedSystems</code> were created and not released. This was suspicious, as those objects were intended to be ephemeral objects intended only to combine the attributes of <code>DescriptorSystem</code> and <code>ModuleSystem</code> into a single object.</p>
+<p>Adam was also to dump the processes memory with [meliae][], after it had leaked memory, so we were able to dig more into the particulars of the <code>CombinedSystems</code> that were still held in memory.</p>
+<section id="investigating-the-memory-dump" class="level1">
+<h1>Investigating the Memory Dump</h1>
+<p>Once we had a dump, I was able to begin investigating with [memsee][]. My first attempt was to use the <code>path</code> command that pointed to the errant pointer in <a href="/posts/memsee-pt1.html">part 1</a>. However, all of those attempts timed out before they found any path from the root to an <code>CombinedSystem</code>.</p>
+<pre class="sourceCode sql"><code class="sourceCode sql">::&gt; <span class="kw">select</span> * <span class="kw">from</span> obj <span class="kw">where</span> <span class="kw">type</span> = <span class="st">&#39;CombinedSystem&#39;</span>;
+#                 address <span class="kw">type</span>                 name                 <span class="fu">value</span>                                                              <span class="kw">size</span>        len mark       repr
+<span class="co">-------- ---------------- -------------------- -------------------- ------------------------------------------------------------ ---------- ---------- ---------- ----------</span>
+#<span class="fl">1.0</span>            <span class="dv">270528592</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+#<span class="fl">1.1</span>            <span class="dv">256545552</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+#<span class="fl">1.2</span>            <span class="dv">239994960</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+&lt;snip&gt;
+#<span class="fl">1.1021</span>         <span class="dv">210278800</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+#<span class="fl">1.1022</span>         <span class="dv">196178640</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+#<span class="fl">1.1023</span>         <span class="dv">179498384</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+#<span class="fl">1.1024</span>         <span class="dv">166197904</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy
+#<span class="fl">1.1025</span>         <span class="dv">149917968</span> CombinedSystem       ∘                    ∘                                                                    <span class="dv">64</span>          ∘ ∘          CombinedSy</code></pre>
+<p>Picking an arbitrary <code>CombinedSystem</code>, we can find out what’s pointing to it.</p>
+<pre class="sourceCode sql"><code class="sourceCode sql">::&gt; parents <span class="dv">149917968</span>
+(<span class="dv">151461744</span>, u<span class="st">&#39;dict&#39;</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">3352</span>, <span class="dv">45</span>)
+::&gt; parents <span class="dv">151461744</span>
+(<span class="dv">149920464</span>, u<span class="st">&#39;LmsModuleSystem&#39;</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">64</span>, <span class="kw">None</span>)</code></pre>
+<p>The first <code>dict</code> is just <code>__dict__</code> from the the <code>LmsModuleSystem</code>. Given that the <code>CombinedSystems</code> are just supposed to be pointing to a <code>DescriptorSystem</code> and <code>ModuleSystem</code>, it’s suspicious that a <code>CombinedSystem</code> is being held in memory in turn by an <code>LmsModuleSystem</code>.</p>
+<p>We can keep tracking the parents upwards:</p>
+<pre class="sourceCode sql"><code class="sourceCode sql">::&gt; parents <span class="dv">149920464</span>
+(<span class="dv">166197904</span>, u<span class="st">&#39;CombinedSystem&#39;</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">64</span>, <span class="kw">None</span>)
+(<span class="dv">151176912</span>, u<span class="st">&#39;dict&#39;</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">280</span>, <span class="dv">1</span>)
+(<span class="dv">150230496</span>, u<span class="st">&#39;dict&#39;</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">1048</span>, <span class="dv">9</span>)
+::&gt; parents <span class="dv">166197904</span>
+(<span class="dv">166753712</span>, u<span class="st">&#39;dict&#39;</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">3352</span>, <span class="dv">45</span>)
+::&gt; parents <span class="dv">166753712</span>
+(<span class="dv">166196048</span>, u<span class="st">&#39;LmsModuleSystem&#39;</span>, <span class="kw">None</span>, <span class="kw">None</span>, <span class="dv">64</span>, <span class="kw">None</span>)</code></pre>
+<p>It looks like we have a chain of <code>LmsModuleSystem -&gt; CombinedSystem -&gt; LmsModuleSystem</code>. (A side note about python memory management: <code>CombinedSystem</code> appears as a direct parent of <code>LmsModuleSystem</code>, with no intervening <code>dict</code> because <code>CombinedSystem</code> defines its attributes using <code>__slots__</code>. This is a good strategy for ephemeral objects, as it saves you from allocating additional dictionaries.)</p>
+</section>
+<section id="designing-a-fix" class="level1">
+<h1>Designing a Fix</h1>
+<p>Looking at the relevant <code>edx-platform</code> code, there’s only one place where <code>CombinedSystems</code> are constructed:</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="co"># edx-platform/common/lib/xmodule/xmodule/x_module.py</span>
+
+<span class="kw">class</span> XModuleMixin(XBlockMixin):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    Fields and methods used by XModules internally.</span>
+
+<span class="co">    Adding this Mixin to an :class:`XBlock` allows it to cooperate with old-style :class:`XModules`</span>
+<span class="co">    &quot;&quot;&quot;</span>
+
+    ...
+
+    <span class="ot">@property</span>
+    <span class="kw">def</span> runtime(<span class="ot">self</span>):
+        <span class="kw">return</span> CombinedSystem(<span class="ot">self</span>.xmodule_runtime, <span class="ot">self</span>._runtime)</code></pre>
+<p><code>XModuleMixin</code> is used added as a base class for all XBlocks used in <code>edx-platform</code>. So, whatever is capturing <code>CombinedSystem</code> in <code>LmsModuleSystem</code>, it’s coming from a call to <code>.runtime</code>.</p>
+<p>The constructor for <code>ModuleSystem</code> (the base-class for <code>LmsModuleSystem</code>) takes a <code>descriptor_runtime</code> argument:</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="co"># edx-platform/common/lib/xmodule/xmodule/x_module.py</span>
+
+<span class="kw">class</span> ModuleSystem(MetricsMixin, ConfigurableFragmentWrapper, Runtime):
+    <span class="kw">def</span> <span class="ot">__init__</span>(<span class="ot">self</span>, ..., descriptor_runtime, ...):
+        ...
+        <span class="ot">self</span>.descriptor_runtime = descriptor_runtime</code></pre>
+<p>This seems like a good candidate for something that would be storing a <code>CombinedSystem</code>. In fact, looking at <code>module_render.py</code>, which is the primary entry point in the LMS for working with XBlocks, we see that we’re passing <code>descriptor.runtime</code> in to that argument:</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="co"># edx-platform/lms/djangoapps/courseware/module_render.py</span>
+
+<span class="kw">def</span> get_module_system_for_user(...):
+    system = LmsModuleSystem(
+        ...
+        descriptor_runtime=descriptor.runtime,
+        ...
+    )</code></pre>
+<p>We find the last piece of the puzzle by looking at what happens to the <code>LmsModuleSystem</code> once it’s constructed.</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="co"># edx-platform/lms/djangoapps/courseware/module_render.py</span>
+
+<span class="kw">def</span> get_module_for_descriptor_internal(user, descriptor, ...):
+    (system, field_data) = get_module_system_for_user(
+        user=user,
+        descriptor=descriptor,
+        ...
+    )
+
+    descriptor.bind_for_student(system, field_data)  <span class="co"># pylint: disable=protected-access</span>
+
+<span class="co"># edx-platform/common/lib/xmodule/xmodule/x_module.py</span>
+
+    <span class="kw">def</span> bind_for_student(<span class="ot">self</span>, xmodule_runtime, field_data):
+        <span class="ot">self</span>.xmodule_runtime = xmodule_runtime</code></pre>
+<p>So, now consider what happens during grading, when we have the same XBlock being bound to different users (or re-bound to the same user) over the course of the grading session:</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="co"># Before grading step</span>
+
+        +----------+
+        |descriptor|
+        +----------+
+
+<span class="co"># LmsModuleSystem(descriptor_runtime=descriptor.runtime)  ## get_module_system_for_user</span>
+
+        +----------+   +---------------+
+        |descriptor|   |CombinedSystem |
+        +----------+   +-^-------------+
+                         |
+                         |descriptor_runtime
+                         |
+                       +-+-------------+
+                       |LmsModuleSystem|
+                       +---------------+
+
+<span class="co"># self.xmodule_runtime = xmodule_runtime   ## bind_for_student</span>
+
+        +----------+   +---------------+
+        |descriptor|   |CombinedSystem |
+        +------+---+   +-^-------------+
+               |         |
+xmodule_runtime|         |descriptor_runtime
+               |         |
+               |       +-+-------------+
+               +-------&gt;LmsModuleSystem|
+                       +---------------+
+
+<span class="co"># LmsModuleSystem(descriptor_runtime=descriptor.runtime)  ## get_module_system_for_user                                                              </span>
+
+        +----------+   +---------------+
+        |descriptor|   |CombinedSystem |
+        +------+---+   +-^-------------+
+               |         |
+xmodule_runtime|         |descriptor_runtime
+               |         |
+               |       +-+-------------+
+               +-------&gt;LmsModuleSystem|
+                       +-^-------------+
+                         |
+                         |_runtime
+                         |
+                       +-+-------------+
+                       |CombinedSystem |
+                       +-^-------------+
+                         |
+                         |descriptor_runtime
+                         |
+                       +-+-------------+
+                       |LmsModuleSystem|
+                       +---------------+
+
+<span class="co"># self.xmodule_runtime = xmodule_runtime   ## bind_for_student</span>
+
+        +----------+   +---------------+
+        |descriptor|   |CombinedSystem |
+        +------+---+   +-^-------------+
+               |         |
+xmodule_runtime|         |descriptor_runtime
+               |         |
+               |       +-+-------------+
+               |       |LmsModuleSystem|
+               |       +-^-------------+
+               |         |
+               |         |_runtime
+               |         |
+               |       +-+-------------+
+               |       |CombinedSystem |
+               |       +-^-------------+
+               |         |
+               |         |descriptor_runtime
+               |         |
+               |       +-+-------------+
+               +-------&gt;LmsModuleSystem|
+                       +---------------+</code></pre>
+<p>In the end, we’re building up a chain of <code>LmsModuleSystems</code> and <code>CombinedSystems</code>, and never releasing them.</p>
+<p>The initial fix to this was to extract actual <code>DescriptorSystem</code> from the <code>CombinedSystem</code>, and passing that to the <code>LmsModuleSystem</code>. That ensures that the references to the previous <code>LmsModuleSystem</code> is released when <code>xmodule_runtime</code> is re-bound. The code to make that change is in <a href="https://github.com/edx/edx-platform/pull/6930/files">this pr</a>.</p>
+<p>A more robust fix would be for <code>ModuleSystem</code> to expect a pointer to a descriptor, rather than the descriptor runtime, so that it can extract the <code>DescriptorSystem</code> from the <code>CombinedSystem</code> itself.</p>
+</section>]]></description>
+    <pubDate>Tue, 17 Feb 2015 00:00:00 UT</pubDate>
+    <guid>http://vengefulpickle.com/posts/memsee-pt2.html</guid>
+</item>
+<item>
+    <title>A Tale of Two Leaks: A Static Leak</title>
+    <link>http://vengefulpickle.com/posts/memsee-pt1.html</link>
+    <description><![CDATA[<p>This is the second of a 3-part series on memory leaks in <a href="https://github.com/edx/edx-platform">edx-platform</a>. Read <a href="/posts/memsee-intro.html">the first part</a> for an introduction to memsee, the tool I used for much of my debugging.</p>
+<p>Over the past several weeks, we’ve been contending with several memory issues on edx.org. The first manifested as a sudden increase in the resting memory footprint of our production web-processes. The second presented as a classic memory leak while doing offline grading of an entire course. In this post, I’ll go though the steps and tools we used to identify the causes of the first of these leaks.</p>
+<!--more-->
+<section id="instrumentation" class="level1">
+<h1>Instrumentation</h1>
+<p>The first step in any debugging task is gathering information. In our case, this was tricky initially, because Python has no built-in facility for exporting information about what is using memory in a running process. So, the first step was to integrate such a facility into <a href="https://github.com/edx/edx-platform">edx-platform</a>.</p>
+<p>In previous investigations of memory usage, I’ve found <a href="https://pypi.python.org/pypi/meliae">meliae</a> to be an extraordinarily useful tool for gathering statistics about the objects resident in memory in a Python process. To integrate it into <a href="https://github.com/edx/edx-platform">edx-platform</a>, I added a signal handler during process startup.</p>
+<pre class="sourceCode python pre-scrollable pre-x-scrollable"><code class="sourceCode python"><span class="co"># lms/wsgi.py</span>
+<span class="ch">import</span> openedx.core.operations
+openedx.core.operations.install_memory_dumper()
+
+<span class="co"># openedx/core/operations.py</span>
+<span class="ch">import</span> os
+<span class="ch">import</span> signal
+<span class="ch">import</span> tempfile
+
+<span class="ch">from</span> datetime <span class="ch">import</span> datetime
+<span class="ch">from</span> meliae <span class="ch">import</span> scanner
+
+
+<span class="kw">def</span> dump_memory(signum, frame):
+    <span class="co">&quot;&quot;&quot;Dump memory stats for the current process to a temp directory. Uses the meliae output format.&quot;&quot;&quot;</span>
+    scanner.dump_all_objects(<span class="st">&#39;{}/meliae.{}.{}.dump&#39;</span>.<span class="dt">format</span>(tempfile.gettempdir(), datetime.now().isoformat(), os.getpid()))
+
+<span class="kw">def</span> install_memory_dumper(dump_signal=signal.SIGPROF):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    Install a signal handler on `signal` to dump memory stats for the current process.</span>
+<span class="co">    &quot;&quot;&quot;</span>
+    signal.signal(dump_signal, dump_memory)</code></pre>
+<p>This signal handler defaults to using <code>SIGPROF</code> as the signal to trigger the memory dump, because that signal isn’t already in use by <a href="http://gunicorn.org/">gunicorn</a> for worker management. However, other runtime environments might need other signals (I wasn’t able to figure out how to get <a href="https://uwsgi-docs.readthedocs.org/en/latest/">uWSGI</a> to pass signals into its worker processes during my testing).</p>
+<p>With this instrumentation in hand, we were able to collect memory dumps from processes exhibiting both of the different memory leaks.</p>
+</section>
+<section id="stable-memory-increase" class="level1">
+<h1>Stable Memory Increase</h1>
+<p>The first memory “leak” seemed less like a classical leak than unintentionally large memory use. Our production webworks normally use ~1.2GB of memory. After a recent release, their stable memory footprint increased to ~1.8GB. Fortunately, we were able to reproduce the same issue on staging, as well, shortly after a worker had started. With the help of our devops team, I collected a memory dump and began analysis.</p>
+<p>I’ve recreated my investigative process (with some dead-ends elided) in memsee below:</p>
+<pre class="sourceCode bash pre-scrollable pre-x-scrollable"><code class="sourceCode bash"><span class="kw">&gt;</span> <span class="kw">python</span> memsee.py
+<span class="co"># Initialized a database to store the dump</span>
+::<span class="kw">&gt;</span> <span class="kw">create</span> stage-dump.db
+
+<span class="co"># Import the dump data</span>
+::<span class="kw">&gt;</span> <span class="kw">read</span> <span class="ot">stage</span>-dump.<span class="ot">meliae</span>
+<span class="kw">Reading.......................................................................................</span>
+<span class="kw">..............................................................................................</span>
+<span class="kw">..............................................................................................</span>
+<span class="kw">..............................................................................................</span>
+<span class="kw">..........................................</span>
+<span class="kw">Marking</span> top objects... 2940
+<span class="kw">4121623</span> (4.1M) <span class="kw">objects</span> and 14969737 (15.0M) <span class="kw">references</span> totalling 1220387792 (1.2G) <span class="kw">bytes</span> (542.6s)
+
+<span class="co"># Find out which objects are most common</span>
+::<span class="kw">&gt;</span> <span class="kw">select</span> <span class="kw">count</span>(*), <span class="kw">type</span> from obj group by type order by 1<span class="kw">;</span>
+
+<span class="kw">&lt;snip&gt;</span>
+<span class="co">#0.1068        5982 datetime.datetime</span>
+<span class="co">#0.1069        6227 DictFieldData</span>
+<span class="co">#0.1070        7192 SequenceDescriptorWi</span>
+<span class="co">#0.1071        8263 weakref</span>
+<span class="co">#0.1072       12928 cell</span>
+<span class="co">#0.1073       14485 float</span>
+<span class="co">#0.1074       14618 CustomTagDescriptorW</span>
+<span class="co">#0.1075       18210 int</span>
+<span class="co">#0.1076       18810 VideoDescriptorWithM</span>
+<span class="co">#0.1077       26786 CapaDescriptorWithMi</span>
+<span class="co">#0.1078       29140 DiscussionDescriptor</span>
+<span class="co">#0.1079       37534 code</span>
+<span class="co">#0.1080       39182 VerticalDescriptorWi</span>
+<span class="co">#0.1081       49247 function</span>
+<span class="co">#0.1082       82098 tuple</span>
+<span class="co">#0.1083      141493 InheritanceKeyValueS</span>
+<span class="co">#0.1084      141493 KvsFieldData</span>
+<span class="co">#0.1085      147720 ScopeIds</span>
+<span class="co">#0.1086      148333 BlockUsageLocator</span>
+<span class="co">#0.1087      382851 list</span>
+<span class="co">#0.1088      404395 unicode</span>
+<span class="co">#0.1089     1006998 str</span>
+<span class="co">#0.1090     1306709 dict</span></code></pre>
+<p>Observe that there are a lot of KvsFieldData objects resident in memory. These are used as backing data storage by all of the XBlocks run in edx-platform, and are a good candidate for holding on to a lot of memory. Let’s find out what’s referencing them.</p>
+<p>Recall from <a href="/posts/memsee-intro.html">the memsee introduction</a>:</p>
+<ul>
+<li><code>path</code> takes the form <code>path from &quot;$where_clause&quot; to &quot;$where_clause&quot;</code>. The first clause specifies which objects to begin the search from, and the second specifies which objects to terminate on.</li>
+<li><code>0&amp;</code> means ‘the children of the object at address 0’, and ‘address 0’ is treated as the root of the memory hierarchy (memsee adds references from address 0 to any objects that have no references to them during import).</li>
+<li><code>path</code> only returns the first path it finds from one set of objects to another.</li>
+</ul>
+<pre class="sourceCode bash pre-scrollable pre-x-scrollable"><code class="sourceCode bash">::<span class="kw">&gt;</span> <span class="kw">path</span> from <span class="st">&quot;address in 0&amp;&quot;</span> to <span class="st">&quot;type = &#39;KvsFieldData&#39;&quot;</span>
+
+<span class="kw">Added</span> 20000 paths to newly discovered nodes
+<span class="kw">Added</span> 12361 paths to newly discovered nodes
+<span class="kw">Added</span> 4462 paths to newly discovered nodes
+<span class="kw">Added</span> 19960 paths to newly discovered nodes
+<span class="kw">Added</span> 39083 paths to newly discovered nodes
+<span class="kw">Added</span> 84670 paths to newly discovered nodes
+<span class="kw">Added</span> 209591 paths to newly discovered nodes
+<span class="kw">Added</span> 231865 paths to newly discovered nodes
+<span class="kw">Added</span> 291043 paths to newly discovered nodes
+<span class="kw">Added</span> 240986 paths to newly discovered nodes
+<span class="kw">Added</span> 104132 paths to newly discovered nodes
+<span class="kw">Added</span> 107793 paths to newly discovered nodes
+<span class="kw">Added</span> 263869 paths to newly discovered nodes
+<span class="kw">Added</span> 3392646 paths to newly discovered nodes
+<span class="kw">Added</span> 3502907 paths to newly discovered nodes
+<span class="co">#                 address type                 name                       value                 size        len mark       repr</span>
+<span class="kw">--------</span> ---------------- -------------------- -------------------------- --------------- ---------- ---------- ---------- ----------
+<span class="co">#0.0           1294669280 frame                ∘                          wait                   512          ∘ ∘          frame</span>
+<span class="co">#0.1             13270096 dict                 ∘                          ∘                     3352         54 ∘          dict</span>
+<span class="co">#0.2      140244885039992 module               sys                        ∘                       56          ∘ ∘          sys</span>
+<span class="co">#0.3             12619664 dict                 ∘                          ∘                     3352         73 ∘          dict</span>
+<span class="co">#0.4             12611920 dict                 ∘                          ∘                   786712       6069 ∘          dict</span>
+<span class="co">#0.5             47884224 module               xmodule.modulestore.django ∘                       56          ∘ ∘          xmodule.mo</span>
+<span class="co">#0.6             47993568 dict                 ∘                          ∘                     3352         31 ∘          dict</span>
+<span class="co">#0.7             88346448 MixedModuleStore     ∘                          ∘                       64          ∘ ∘          MixedModul</span>
+<span class="co">#0.8             88505440 dict                 ∘                          ∘                     1048         12 ∘          dict</span>
+<span class="co">#0.9             24983952 dict                 ∘                          ∘                    12568        230 ∘          dict</span>
+<span class="co">#0.10           109863312 XMLModuleStore       ∘                          ∘                       64          ∘ ∘          XMLModuleS</span>
+<span class="co">#0.11           110265552 dict                 ∘                          ∘                     1048         17 ∘          dict</span>
+<span class="co">#0.12           110264976 dict                 ∘                          ∘                     3352         62 ∘          dict</span>
+<span class="co">#0.13          1023398416 CourseDescriptorWith ∘                          ∘                       64          ∘ ∘          CourseDesc</span>
+<span class="co">#0.14          1023827696 dict                 ∘                          ∘                     1048         15 ∘          dict</span>
+<span class="co">#0.15          1023398352 KvsFieldData         ∘                          ∘                       64          ∘ ∘          KvsFieldDa</span></code></pre>
+<p>Ok, so this <code>KvsFieldData</code> is being held in memory by the <code>XMLModuleStore</code>. Thats not too surprising (we expect many XModules to be held in memory by that Modulestore, in fact). However, in the original investigation, a different module (not <code>xmodule.modulestore.django</code>, as listed above) was holding on to the pointer to <code>MixedModuleStore</code>. This should never happen, because the <code>MixedModuleStore</code> is supposed to be a single instance, used globally.</p>
+<pre class="sourceCode bash pre-scrollable pre-x-scrollable"><code class="sourceCode bash"><span class="co"># Let&#39;s look at the two XMLModuleStores.</span>
+::<span class="kw">&gt;</span> <span class="kw">select</span> <span class="kw">*</span> from obj where type = <span class="st">&#39;XMLModuleStore&#39;</span>
+<span class="co">#                 address type                 name                 value                size        len mark       repr</span>
+<span class="kw">--------</span> ---------------- -------------------- -------------------- -------------- ---------- ---------- ---------- ----------
+<span class="co">#1.0            110810832 XMLModuleStore       ∘                    ∘                      64          ∘ ∘          XMLModuleS</span>
+<span class="co">#1.1            109863312 XMLModuleStore       ∘                    ∘                      64          ∘ ∘          XMLModuleS</span>
+
+<span class="co"># We can find the path to the root for each of them</span>
+::<span class="kw">&gt;</span> <span class="kw">path</span> from <span class="st">&quot;address = 110810832&quot;</span> to <span class="st">&quot;address in 0&amp;&quot;</span> reversed
+<span class="kw">Added</span> 162 paths to newly discovered nodes
+<span class="kw">Added</span> 224 paths to newly discovered nodes
+<span class="kw">Added</span> 73884 paths to newly discovered nodes
+<span class="kw">Added</span> 73698 paths to newly discovered nodes
+<span class="kw">Added</span> 114334 paths to newly discovered nodes
+<span class="kw">Added</span> 40842 paths to newly discovered nodes
+<span class="kw">Added</span> 38 paths to newly discovered nodes
+<span class="kw">Added</span> 38 paths to newly discovered nodes
+<span class="kw">Added</span> 76 paths to newly discovered nodes
+<span class="kw">Added</span> 304 paths to newly discovered nodes
+<span class="kw">Added</span> 304 paths to newly discovered nodes
+<span class="kw">Added</span> 1634 paths to newly discovered nodes
+<span class="kw">Added</span> 1520 paths to newly discovered nodes
+<span class="kw">Added</span> 18278 paths to newly discovered nodes
+<span class="kw">Added</span> 567302 paths to newly discovered nodes
+<span class="co">#                 address type                 name                 value                 size        len mark       repr</span>
+<span class="kw">--------</span> ---------------- -------------------- -------------------- --------------- ---------- ---------- ---------- ----------
+<span class="co">#0.0            110810832 XMLModuleStore       ∘                    ∘                       64          ∘ ∘          XMLModuleS</span>
+<span class="co">#0.1            109985944 list                 ∘                    ∘                      104          3 ∘          list</span>
+<span class="co">#0.2            111043728 dict                 ∘                    ∘                     1048         12 ∘          dict</span>
+<span class="co">#0.3            110780112 MixedModuleStore     ∘                    ∘                       64          ∘ ∘          MixedModul</span>
+<span class="co">#0.4            111033776 dict                 ∘                    ∘                      280          1 ∘          dict</span>
+<span class="co">#0.5            110809360 LibraryToolsService  ∘                    ∘                       64          ∘ ∘          LibraryToo</span>
+<span class="co">#0.6            111031056 dict                 ∘                    ∘                      280          5 ∘          dict</span>
+<span class="co">#0.7            111034352 dict                 ∘                    ∘                     3352         41 ∘          dict</span>
+<span class="co">#0.8            110779280 LmsModuleSystem      ∘                    ∘                       64          ∘ ∘          LmsModuleS</span>
+<span class="co">#0.9            111050032 dict                 ∘                    ∘                     3352         26 ∘          dict</span>
+<span class="co">#0.10           110783296 module               open_ended_grading.u ∘                       56          ∘ ∘          open_ended</span>
+<span class="co">#0.11            12611920 dict                 ∘                    ∘                   786712       6069 ∘          dict</span>
+<span class="co">#0.12            12619664 dict                 ∘                    ∘                     3352         73 ∘          dict</span>
+<span class="co">#0.13     140244885039992 module               sys                  ∘                       56          ∘ ∘          sys</span>
+<span class="co">#0.14            13270096 dict                 ∘                    ∘                     3352         54 ∘          dict</span>
+<span class="co">#0.15          1294669280 frame                ∘                    wait                   512          ∘ ∘          frame</span>
+
+
+::<span class="kw">&gt;</span> <span class="kw">select</span> <span class="kw">*</span> from obj where address = 110783296<span class="kw">;</span>
+<span class="co">#                 address type                 name                           value              size        len mark       repr</span>
+<span class="kw">--------</span> ---------------- -------------------- ------------------------------ ------------ ---------- ---------- ---------- ----------
+<span class="co">#5.0            110783296 module               open_ended_grading.utils       ∘                    56          ∘ ∘          open_ended</span>
+
+
+::<span class="kw">&gt;</span> <span class="kw">path</span> from <span class="st">&quot;address = 109863312&quot;</span> to <span class="st">&quot;address in 0&amp;&quot;</span> reversed
+<span class="kw">Added</span> 162 paths to newly discovered nodes
+<span class="kw">Added</span> 224 paths to newly discovered nodes
+<span class="kw">Added</span> 74284 paths to newly discovered nodes
+<span class="kw">Added</span> 74098 paths to newly discovered nodes
+<span class="kw">Added</span> 114983 paths to newly discovered nodes
+<span class="kw">Added</span> 43125 paths to newly discovered nodes
+<span class="kw">Added</span> 28538 paths to newly discovered nodes
+<span class="kw">Added</span> 70566 paths to newly discovered nodes
+<span class="kw">Added</span> 257640 paths to newly discovered nodes
+<span class="kw">Added</span> 3690598 paths to newly discovered nodes
+<span class="co">#                 address type                 name                 value              size        len mark       repr</span>
+<span class="kw">--------</span> ---------------- -------------------- -------------------- ------------ ---------- ---------- ---------- ----------
+<span class="co">#1.0            109863312 XMLModuleStore       ∘                    ∘                   64          ∘ ∘          XMLModuleS</span>
+<span class="co">#1.1             88367256 list                 ∘                    ∘                  104          3 ∘          list</span>
+<span class="co">#1.2             88505440 dict                 ∘                    ∘                 1048         12 ∘          dict</span>
+<span class="co">#1.3             88346448 MixedModuleStore     ∘                    ∘                   64          ∘ ∘          MixedModul</span>
+<span class="co">#1.4             47993568 dict                 ∘                    ∘                 3352         31 ∘          dict</span>
+<span class="co">#1.5             47884224 module               xmodule.modulestore. ∘                   56          ∘ ∘          xmodule.mo</span>
+<span class="co">#1.6             12611920 dict                 ∘                    ∘               786712       6069 ∘          dict</span>
+<span class="co">#1.7             12619664 dict                 ∘                    ∘                 3352         73 ∘          dict</span>
+<span class="co">#1.8      140244885039992 module               sys                  ∘                   56          ∘ ∘          sys</span>
+<span class="co">#1.9             13270096 dict                 ∘                    ∘                 3352         54 ∘          dict</span>
+<span class="co">#1.10          1294669280 frame                ∘                    wait               512          ∘ ∘          frame</span>
+</code></pre>
+<p>And there it is, the reason for our memory growth: we’re loading XML courses twice into memory, rather than once. But why is <code>open_ended_grading.utils</code> holding on to an <code>XMLModuleStore</code>? Tracing through the chain of references, can see that it is holding an <code>LmsModuleSystem</code> as an attribute (the intervening <code>dict</code> is the modules <code>__dict__</code> attribute). The <code>LmsModuleSystem</code> in turn, has a <code>LibraryToolsService</code>, which points to a <code>MixedModuleStore</code>, which holds the <code>XMLModuleStore</code>.</p>
+<p>To confirm that we understand the source of the leak, we can release what we think is the errant modulestore, and see how much memory it was using.</p>
+<pre class="sourceCode bash pre-scrollable pre-x-scrollable"><code class="sourceCode bash"><span class="co"># Release all references to the XMLModuleStore</span>
+::<span class="kw">&gt;</span> <span class="kw">delete</span> from ref where child = 110810832
+<span class="kw">162</span> rows deleted
+
+<span class="co"># Garbage collect objects</span>
+::<span class="kw">&gt;</span> <span class="kw">gc</span>
+<span class="kw">4121623</span> (4.1M) <span class="kw">objects</span>, 14972515 (15.0M) <span class="kw">references</span>, 1220387792 (1.2G) <span class="kw">total</span> bytes
+<span class="kw">Marked</span> 2940 top level objects
+<span class="kw">Marked</span> 13840 objects at depth 1
+<span class="kw">Marked</span> 6546 objects at depth 2
+<span class="kw">Marked</span> 2322 objects at depth 3
+<span class="kw">Marked</span> 9517 objects at depth 4
+<span class="kw">Marked</span> 13059 objects at depth 5
+<span class="kw">Marked</span> 7879 objects at depth 6
+<span class="kw">Marked</span> 50066 objects at depth 7
+<span class="kw">Marked</span> 78560 objects at depth 8
+<span class="kw">Marked</span> 83168 objects at depth 9
+<span class="kw">Marked</span> 72434 objects at depth 10
+<span class="kw">Marked</span> 25461 objects at depth 11
+<span class="kw">Marked</span> 19124 objects at depth 12
+<span class="kw">Marked</span> 13437 objects at depth 13
+<span class="kw">&lt;snip&gt;</span>
+<span class="kw">Marked</span> 2 objects at depth 431
+<span class="kw">Marked</span> 8 objects at depth 432
+<span class="kw">Marking</span> complete
+<span class="kw">Deleted</span> 1897434 objects
+<span class="kw">2224189</span> (2.2M) <span class="kw">objects</span>, 14972515 (15.0M) <span class="kw">references</span>, 653444692 (653.4M) <span class="kw">total</span> bytes</code></pre>
+<p>Releasing that modulestore freed 650Mb of memory, which accounts for the amount of unexpected memory use we observed on production.</p>
+<p>The next question was why the <code>open_ended_grading.utils</code> was creating a separate copy of the ModuleStores, rather than the global copy. The answer turns out to be that the <code>LmsModuleSystem</code> was created during import, which happened while the global <code>ModuleStore</code> was being initialized. As a result, it couldn’t retrieve the as-yet incomplete global copy of the <code>ModuleStore</code>, and created a new one instead.</p>
+<p><a href="https://github.com/edx/edx-platform/pull/6892">The solution</a> to the leak involved removing the static creation of <code>LmsModuleSystem</code> from the old OpenEndedResponse code.</p>
+<p>In <a href="/posts/memsee-pt2.html">part 2</a>, I’ll detail how I debugged linear memory growth in our offline grading process.</p>
+</section>]]></description>
+    <pubDate>Tue, 10 Feb 2015 00:00:00 UT</pubDate>
+    <guid>http://vengefulpickle.com/posts/memsee-pt1.html</guid>
+</item>
+<item>
+    <title>A Tale of Two Leaks: An Introduction to Memsee</title>
+    <link>http://vengefulpickle.com/posts/memsee-intro.html</link>
+    <description><![CDATA[<p>This is the first of a 3-part series of posts detailing my investigations into two separate memory leaks in <a href="https://github.com/edx/edx-platform">edx-platform</a>. In this post, I’ll describe <a href="https://github.com/nedbat/memsee">memsee</a>, a tool built by <a href="http://nedbatchelder.com/">Ned</a> and me during a previous memory investigation which can help to provide insight while diagnosing a leak.</p>
+<!--more-->
+<section id="design" class="level1">
+<h1>Design</h1>
+<p>Memsee is intended as a tool to interactively investigate memory usage in a snapshot taken from a Python process. It is built to load in a memory dump into a SQLite database, and then provide a REPL for querying that database, naming objects for future investigation, and performing various graph-based queries to determine how objects are related.</p>
+<p>The basic SQLite schema used is quite simple: it consists of a table for objects (named <code>obj</code>) and a table of references between objects (named <code>ref</code>). The schema for the two tables is reproduced below:</p>
+<pre class="sourceCode sql"><code class="sourceCode sql"><span class="kw">CREATE</span> <span class="kw">TABLE</span> obj (
+    address <span class="dt">int</span> <span class="kw">primary</span> <span class="kw">key</span>,  <span class="co">-- the memory address of the object</span>
+    <span class="kw">type</span> text,                <span class="co">-- the type of the python object</span>
+    name text,                <span class="co">-- the name of the python object (for things like functions and classes)</span>
+    <span class="fu">value</span> text,               <span class="co">-- the value of the object (for strings and ints)</span>
+    <span class="kw">size</span> <span class="dt">int</span>,                 <span class="co">-- the amount of memory allocated to the object</span>
+    len <span class="dt">int</span>,                  <span class="co">-- the length of the object (for lists, etc)</span>
+    mark <span class="dt">int</span>,                 <span class="co">-- whether the object is reachable from</span>
+                              <span class="co">--   the root (used during memsee garbage collection)</span>
+    repr text                 <span class="co">-- a rough approximation of the python repr of the object</span>
+                              <span class="co">--   (limited by the information that is dumped by meliae)</span>
+);
+<span class="kw">CREATE</span> <span class="kw">TABLE</span> <span class="fu">ref</span> (
+    <span class="kw">parent</span> <span class="dt">int</span>,               <span class="co">-- the memory address of the object holding the reference</span>
+    <span class="kw">child</span> <span class="dt">int</span>                 <span class="co">-- the memory address of the referenced object</span>
+);</code></pre>
+</section>
+<section id="commands" class="level1">
+<h1>Commands</h1>
+<section id="starting-memsee" class="level2">
+<h2>Starting Memsee</h2>
+<pre class="sourceCode bash"><code class="sourceCode bash"><span class="kw">&gt;</span> <span class="kw">python</span> memsee.py [DATABASE]</code></pre>
+<p>Start <code>memsee</code>. If <code>DATABASE</code> is supplied, then connect to that database on startup. Will not create the database if it doesn’t exist.</p>
+</section>
+<section id="setting-up-a-database" class="level2">
+<h2>Setting Up A Database</h2>
+<section id="create" class="level3">
+<h3>create</h3>
+<pre class="sourceCode bash"><code class="sourceCode bash">::<span class="kw">&gt;</span> <span class="kw">create</span> DATABASE</code></pre>
+<p>Create a new memsee database to work in, and connect to it.</p>
+</section>
+<section id="read" class="level3">
+<h3>read</h3>
+<pre class="sourceCode bash"><code class="sourceCode bash">::<span class="kw">&gt;</span> <span class="kw">read</span> <span class="ot">FILE</span></code></pre>
+<p>Read a <a href="https://pypi.python.org/pypi/meliae">meliae</a> memory dump into the active database as a new generation.</p>
+</section>
+<section id="open" class="level3">
+<h3>open</h3>
+<pre class="sourceCode bash"><code class="sourceCode bash">::<span class="kw">&gt;</span> <span class="kw">open</span> FILE</code></pre>
+<p>Connect to a previously created memsee database.</p>
+</section>
+</section>
+<section id="inspecting-objects" class="level2">
+<h2>Inspecting objects</h2>
+<section id="select" class="level3">
+<h3>select</h3>
+<pre class="sourceCode sql"><code class="sourceCode sql">::&gt; <span class="kw">select</span> * <span class="kw">from</span> obj <span class="kw">where</span> <span class="kw">type</span> = <span class="st">&#39;dict&#39;</span> <span class="kw">limit</span> <span class="dv">10</span>
+
+#          address <span class="kw">type</span> name <span class="fu">value</span>   <span class="kw">size</span>   len mark   repr
+<span class="co">-------- --------- ---- ---- ----- ------ ----- ------ ----------</span>
+#<span class="fl">0.0</span>      <span class="dv">39981760</span> dict ∘    ∘       <span class="dv">1048</span>    <span class="dv">13</span> ∘      dict
+#<span class="fl">0.1</span>     <span class="dv">118896112</span> dict ∘    ∘       <span class="dv">1048</span>    <span class="dv">10</span> ∘      dict
+#<span class="fl">0.2</span>      <span class="dv">31427024</span> dict ∘    ∘       <span class="dv">1048</span>    <span class="dv">20</span> ∘      dict
+#<span class="fl">0.3</span>      <span class="dv">31172288</span> dict ∘    ∘       <span class="dv">3352</span>    <span class="dv">29</span> ∘      dict
+#<span class="fl">0.4</span>      <span class="dv">31463552</span> dict ∘    ∘        <span class="dv">664</span>     <span class="dv">8</span> ∘      dict
+#<span class="fl">0.5</span>      <span class="dv">16117648</span> dict ∘    ∘       <span class="dv">3352</span>    <span class="dv">71</span> ∘      dict
+#<span class="fl">0.6</span>      <span class="dv">20850512</span> dict ∘    ∘       <span class="dv">1048</span>    <span class="dv">10</span> ∘      dict
+#<span class="fl">0.7</span>      <span class="dv">16117360</span> dict ∘    ∘      <span class="dv">12568</span>   <span class="dv">144</span> ∘      dict
+#<span class="fl">0.8</span>      <span class="dv">16503472</span> dict ∘    ∘       <span class="dv">1048</span>     <span class="dv">7</span> ∘      dict
+#<span class="fl">0.9</span>      <span class="dv">16281728</span> dict ∘    ∘       <span class="dv">3352</span>    <span class="dv">41</span> ∘      dict
+#<span class="fl">0.10</span>     <span class="dv">16246816</span> dict ∘    ∘      <span class="dv">12568</span>   <span class="dv">235</span> ∘      dict</code></pre>
+<p>Execute a SQL select query against the connected memsee database.</p>
+</section>
+</section>
+<section id="substitutions" class="level2">
+<h2>Substitutions</h2>
+<p>Memsee will perform a number of substitutions in select commands that make traversing the object graph easier.</p>
+<section id="children" class="level3">
+<h3>Children</h3>
+<p><code>&amp;</code>, when appended to a memory address, means “the address of all child objects”, and could be understood as</p>
+<pre class="sourceCode sql"><code class="sourceCode sql"><span class="dv">1234</span>&amp;  &lt;==&gt;  (<span class="kw">select</span> <span class="kw">child</span> <span class="kw">from</span> <span class="fu">ref</span> <span class="kw">where</span> <span class="kw">parent</span> = <span class="dv">1234</span>)</code></pre>
+<p>This suffix can be repeated to traverse multiple level of the object hierarchy.</p>
+</section>
+<section id="parents" class="level3">
+<h3>Parents</h3>
+<p>Similar to <code>&amp;</code>, <code>^</code> selects the memory address of parents of the target address.</p>
+<pre class="sourceCode sql"><code class="sourceCode sql"><span class="dv">1234</span>^  &lt;==&gt;  (<span class="kw">select</span> <span class="kw">parent</span> <span class="kw">from</span> <span class="fu">ref</span> <span class="kw">where</span> <span class="kw">child</span> = <span class="dv">1234</span>)</code></pre>
+</section>
+</section>
+<section id="tree-traversal" class="level2">
+<h2>Tree Traversal</h2>
+<section id="path" class="level3">
+<h3>path</h3>
+<p>The <code>path</code> command searches from one set of objects to another, following references from the currently selected set until it finds a path to the destination set. It prints the objects in the first path that is found.</p>
+<pre class="sourceCode bash"><code class="sourceCode bash">::<span class="kw">&gt;</span> <span class="kw">path</span> from <span class="st">&quot;QUERY&quot;</span> to <span class="st">&quot;QUERY&quot;</span> [reversed]</code></pre>
+<p>The <code>reversed</code> argument causes the traversal to follow references backwards (from child to parent).</p>
+<section id="example" class="level4">
+<h4>Example</h4>
+<pre class="sourceCode bash"><code class="sourceCode bash">::<span class="kw">&gt;</span> <span class="kw">path</span> from <span class="st">&quot;address = 110810832&quot;</span> to <span class="st">&quot;address in 0&amp;&quot;</span> reversed
+<span class="kw">Added</span> 162 paths to newly discovered nodes
+<span class="kw">Added</span> 224 paths to newly discovered nodes
+<span class="kw">Added</span> 73884 paths to newly discovered nodes
+<span class="kw">Added</span> 73698 paths to newly discovered nodes
+<span class="kw">Added</span> 114334 paths to newly discovered nodes
+<span class="kw">Added</span> 40842 paths to newly discovered nodes
+<span class="kw">Added</span> 38 paths to newly discovered nodes
+<span class="kw">Added</span> 38 paths to newly discovered nodes
+<span class="kw">Added</span> 76 paths to newly discovered nodes
+<span class="kw">Added</span> 304 paths to newly discovered nodes
+<span class="kw">Added</span> 304 paths to newly discovered nodes
+<span class="kw">Added</span> 1634 paths to newly discovered nodes
+<span class="kw">Added</span> 1520 paths to newly discovered nodes
+<span class="kw">Added</span> 18278 paths to newly discovered nodes
+<span class="kw">Added</span> 567302 paths to newly discovered nodes
+<span class="co">#                 address type                 name                 value     size   len mark  repr</span>
+<span class="kw">--------</span> ---------------- -------------------- -------------------- ------- ------ ----- ----- ----------
+<span class="co">#0.0            110810832 XMLModuleStore       ∘                    ∘           64     ∘ ∘     XMLModuleS</span>
+<span class="co">#0.1            109985944 list                 ∘                    ∘          104     3 ∘     list</span>
+<span class="co">#0.2            111043728 dict                 ∘                    ∘         1048    12 ∘     dict</span>
+<span class="co">#0.3            110780112 MixedModuleStore     ∘                    ∘           64     ∘ ∘     MixedModul</span>
+<span class="co">#0.4            111033776 dict                 ∘                    ∘          280     1 ∘     dict</span>
+<span class="co">#0.5            110809360 LibraryToolsService  ∘                    ∘           64     ∘ ∘     LibraryToo</span>
+<span class="co">#0.6            111031056 dict                 ∘                    ∘          280     5 ∘     dict</span>
+<span class="co">#0.7            111034352 dict                 ∘                    ∘         3352    41 ∘     dict</span>
+<span class="co">#0.8            110779280 LmsModuleSystem      ∘                    ∘           64     ∘ ∘     LmsModuleS</span>
+<span class="co">#0.9            111050032 dict                 ∘                    ∘         3352    26 ∘     dict</span>
+<span class="co">#0.10           110783296 module               open_ended_grading.u ∘           56     ∘ ∘     open_ended</span>
+<span class="co">#0.11            12611920 dict                 ∘                    ∘       786712  6069 ∘     dict</span>
+<span class="co">#0.12            12619664 dict                 ∘                    ∘         3352    73 ∘     dict</span>
+<span class="co">#0.13     140244885039992 module               sys                  ∘           56     ∘ ∘     sys</span>
+<span class="co">#0.14            13270096 dict                 ∘                    ∘         3352    54 ∘     dict</span>
+<span class="co">#0.15          1294669280 frame                ∘                    wait       512     ∘ ∘     frame</span></code></pre>
+<p>This series continues in <a href="/posts/memsee-pt1.html">Part 1</a> where I describe tracking down a single large memory leak.</p>
+</section>
+</section>
+</section>
+</section>]]></description>
+    <pubDate>Tue, 10 Feb 2015 00:00:00 UT</pubDate>
+    <guid>http://vengefulpickle.com/posts/memsee-intro.html</guid>
+</item>
+<item>
+    <title>Using Hypothesis</title>
+    <link>http://vengefulpickle.com/posts/hypothesis.html</link>
+    <description><![CDATA[<p>One of the difficulties when writing unit tests is picking input data (or test cases) that expose all of the potential bugs in your code. Often, you write test cases to catch the bugs you know exist (or thought about guarding against), but miss the input that would lead to the bugs that still exist in your code. An alternative to this is property-based testing, where rather than choosing inputs yourself, you let the computer choose inputs for you.</p>
+<p>Property-based testing is an alternative approach to unit testing where rather than describing specific input values and the results of executing operations on those values, you instead write a test that should be true of <em>all</em> input data of a certain form, and then let the test framework feed in data until it either finds an example that fails, or runs out of attempts to do so. The grand-daddy of all property-testing libraries is <a href="https://hackage.haskell.org/package/QuickCheck">QuickCheck</a>, but re-implementations exist in many languages.</p>
+<p><a href="https://github.com/DRMacIver/hypothesis">Hypothesis</a> is a library for property-based testing in Python.</p>
+<!--more-->
+<p>This testing technique is most directly applicable to pure functions (where the output of the function depends only on the input), but can be used to generate test data for many other types of tests as well.</p>
+<p>For instance, in the edX LMS, we have several functions to encode and decode strings with <code>/</code> in them.</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="kw">def</span> _quote_slashes(match):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    Helper function for `quote_slashes`</span>
+<span class="co">    &quot;&quot;&quot;</span>
+    matched = match.group(<span class="dv">0</span>)
+    <span class="co"># We have to escape &#39;;&#39;, because that is our</span>
+    <span class="co"># escape sequence identifier (otherwise, the escaping)</span>
+    <span class="co"># couldn&#39;t distinguish between us adding &#39;;_&#39; to the string</span>
+    <span class="co"># and &#39;;_&#39; appearing naturally in the string</span>
+    <span class="kw">if</span> matched == <span class="st">&#39;;&#39;</span>:
+        <span class="kw">return</span> <span class="st">&#39;;;&#39;</span>
+    <span class="kw">elif</span> matched == <span class="st">&#39;/&#39;</span>:
+        <span class="kw">return</span> <span class="st">&#39;;_&#39;</span>
+    <span class="kw">else</span>:
+        <span class="kw">return</span> matched
+
+
+<span class="kw">def</span> quote_slashes(text):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    Quote &#39;/&#39; characters so that they aren&#39;t visible to</span>
+<span class="co">    django&#39;s url quoting, unquoting, or url regex matching.</span>
+
+<span class="co">    Escapes &#39;/&#39;&#39; to the sequence &#39;;_&#39;, and &#39;;&#39; to the sequence</span>
+<span class="co">    &#39;;;&#39;. By making the escape sequence fixed length, and escaping</span>
+<span class="co">    identifier character &#39;;&#39;, we are able to reverse the escaping.</span>
+<span class="co">    &quot;&quot;&quot;</span>
+    <span class="kw">return</span> re.sub(<span class="st">ur&#39;[;/]&#39;</span>, _quote_slashes, text)
+
+
+<span class="kw">def</span> _unquote_slashes(match):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    Helper function for `unquote_slashes`</span>
+<span class="co">    &quot;&quot;&quot;</span>
+    matched = match.group(<span class="dv">0</span>)
+    <span class="kw">if</span> matched == <span class="st">&#39;;;&#39;</span>:
+        <span class="kw">return</span> <span class="st">&#39;;&#39;</span>
+    <span class="kw">elif</span> matched == <span class="st">&#39;;_&#39;</span>:
+        <span class="kw">return</span> <span class="st">&#39;/&#39;</span>
+    <span class="kw">else</span>:
+        <span class="kw">return</span> matched
+
+
+<span class="kw">def</span> unquote_slashes(text):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    Unquote slashes quoted by `quote_slashes`</span>
+<span class="co">    &quot;&quot;&quot;</span>
+    <span class="kw">return</span> re.sub(<span class="st">r&#39;(;;|;_)&#39;</span>, _unquote_slashes, text)</code></pre>
+<p>The tests for these functions list out specific input strings to test on</p>
+<pre class="sourceCode python"><code class="sourceCode python">TEST_STRINGS = [
+    <span class="st">&#39;&#39;</span>,
+    <span class="co">&#39;foobar&#39;</span>,
+    <span class="co">&#39;foo/bar&#39;</span>,
+    <span class="co">&#39;foo/bar;&#39;</span>,
+    <span class="co">&#39;foo;;bar&#39;</span>,
+    <span class="co">&#39;foo;_bar&#39;</span>,
+    <span class="co">&#39;foo/&#39;</span>,
+    <span class="co">&#39;/bar&#39;</span>,
+    <span class="co">&#39;foo//bar&#39;</span>,
+    <span class="co">&#39;foo;;;bar&#39;</span>,
+]
+
+
+<span class="ot">@ddt</span>
+<span class="kw">class</span> TestQuoteSlashes(TestCase):
+    <span class="co">&quot;&quot;&quot;Test the quote_slashes and unquote_slashes functions&quot;&quot;&quot;</span>
+
+    <span class="ot">@data</span>(*TEST_STRINGS)
+    <span class="kw">def</span> test_inverse(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertEquals(test_string, unquote_slashes(quote_slashes(test_string)))
+
+    <span class="ot">@data</span>(*TEST_STRINGS)
+    <span class="kw">def</span> test_escaped(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertNotIn(<span class="st">&#39;/&#39;</span>, quote_slashes(test_string))</code></pre>
+<p>(In this snippet, <code>ddt</code> refers to <a href="http://ddt.readthedocs.org/en/latest/">another useful testing library</a> which I might cover in a later post.)</p>
+<p>These tests seem fairly complete, but we might worry about whether we got all of the combinations of <code>;</code>, <code>_</code>, and <code>/</code>, and all of their edge cases.</p>
+<p>So, let’s try changing the test to a property based test instead, and see if we can let the computer find better test cases for us.</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="ch">from</span> hypothesis.testdecorators <span class="ch">import</span> given
+
+<span class="kw">class</span> TestQuoteSlashes(TestCase):
+    <span class="co">&quot;&quot;&quot;Test the quote_slashes and unquote_slashes functions&quot;&quot;&quot;</span>
+
+    <span class="ot">@given</span>(<span class="dt">str</span>)
+    <span class="kw">def</span> test_inverse(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertEquals(test_string, unquote_slashes(quote_slashes(test_string)))
+
+    <span class="ot">@given</span>(<span class="dt">str</span>)
+    <span class="kw">def</span> test_escaped(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertNotIn(<span class="st">&#39;/&#39;</span>, quote_slashes(test_string))</code></pre>
+<p>Those tests run, and…. all pass.</p>
+<pre class="sourceCode bash"><code class="sourceCode bash"><span class="kw">&gt;</span> <span class="kw">python</span> -m coverage run --rcfile=lms/.coveragerc ./manage.py lms test --verbosity=1 lms_xblock.test.test_runtime   --traceback --settings=test
+========================================
+ <span class="kw">Running</span> tests for lms
+========================================
+<span class="kw">nosetests</span> lms_xblock.test.test_runtime --id-file /home/cpennington/work/edx-platform/.testids/lms/noseids --xunit-file /home/cpennington/work/edx-platform/reports/lms/nosetests.xml --verbosity=1
+<span class="kw">Creating</span> test database for alias <span class="st">&#39;default&#39;</span>...
+<span class="kw">.........</span>
+<span class="kw">-----------------------------------------------------------------------------</span>
+<span class="kw">9</span> tests run in 2.6 seconds (9 tests passed)</code></pre>
+<p>How uninteresting. Let’s introduce a bug in the code, to see how the test failure manifests.</p>
+<pre class="sourceCode diff"><code class="sourceCode diff">     if matched == &#39;;&#39;:
+         return &#39;;;&#39;
+     elif matched == &#39;/&#39;:
+<span class="st">-        return &#39;;_&#39;</span>
+<span class="ot">+        return &#39;;;&#39;</span></code></pre>
+<p>Now, we get an interesting failure.</p>
+<pre class="sourceCode bash"><code class="sourceCode bash"><span class="kw">1</span>) <span class="kw">FAIL</span>: test_inverse (lms_xblock.test.test_runtime.TestQuoteSlashes)
+
+   <span class="kw">Traceback</span> (most recent call last)<span class="kw">:</span>
+    <span class="kw">/home/cpennington/.virtualenvs/edx-platform/local/lib/python2.7/site-packages/hypothesis/testdecorators.py</span> line 41 in wrapped_test
+      <span class="kw">test</span>(*(arguments + falsifying_example[0]), <span class="kw">**falsifying_example</span>[1])
+    <span class="kw">lms/djangoapps/lms_xblock/test/test_runtime.py</span> line 22 in test_inverse
+      <span class="kw">self.assertEquals</span>(test_string, unquote_slashes(quote_slashes(test_string)))
+   <span class="kw">AssertionError</span>: <span class="st">&#39;/&#39;</span> != <span class="st">&#39;;&#39;</span></code></pre>
+<p>But run the same test again, and it passes! That highlights one of the biggest issues with property-testing, which is that it relies on generating enough input data to catch the bug. As the space of input grows, so does the time it takes to explore it.</p>
+<p>With Hypothesis, we can combat this by increasing the number of examples.</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="ch">from</span> hypothesis.testdecorators <span class="ch">import</span> given
+<span class="ch">from</span> hypothesis.settings <span class="ch">import</span> Settings
+
+<span class="kw">class</span> TestQuoteSlashes(TestCase):
+    <span class="co">&quot;&quot;&quot;Test the quote_slashes and unquote_slashes functions&quot;&quot;&quot;</span>
+
+    <span class="ot">@given</span>(<span class="dt">str</span>, verifier_settings=Settings(max_examples=<span class="dv">1000</span>))
+    <span class="kw">def</span> test_inverse(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertEquals(test_string, unquote_slashes(quote_slashes(test_string)))
+
+    <span class="ot">@given</span>(<span class="dt">str</span>, verifier_settings=Settings(max_examples=<span class="dv">1000</span>))
+    <span class="kw">def</span> test_escaped(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertNotIn(<span class="st">&#39;/&#39;</span>, quote_slashes(test_string))</code></pre>
+<p>Now the test consistently detects our bug (the number of examples and test timeout can both be tuned to limit the amount of time spent in the test suite).</p>
+<p>An advantage to this randomized testing over our fixed list of strings is that it will test characters that we might not have thought to in our attempt at an exhaustive list. If we change the set of characters used to encode the <code>/</code>, our tests won’t need to change. However, the test is still limited by what characters might be generated by the random data generator. If we switch <code>@given(str)</code> to <code>@given(unicode)</code>, the test no longer identifies the bug, because Hypothesis uses a data generator for <code>unicode</code> that includes only numbers and ascii characters (and no symbols such as <code>/</code>). This seems like a questionable choice to me, but was perhaps made to limit the search space to “text-like” strings. There is always a tradeoff between on breadth and depth of the search that property-based testing makes, because there is a finite time to generate new test data. By limiting the number of characters used to generate strings, we can expect to more completely explore the space of a given string length.</p>
+<p>One might also consider injecting generated strings into a list of <code>ddt</code> items.</p>
+<pre class="sourceCode python"><code class="sourceCode python">    <span class="ot">@data</span>(*(TEST_STRINGS + generate_strings()))
+    <span class="kw">def</span> test_inverse(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertEquals(test_string, unquote_slashes(quote_slashes(test_string)))
+
+    <span class="ot">@data</span>(*(TEST_STRINGS + generate_strings()))
+    <span class="kw">def</span> test_escaped(<span class="ot">self</span>, test_string):
+        <span class="ot">self</span>.assertNotIn(<span class="st">&#39;/&#39;</span>, quote_slashes(test_string))</code></pre>
+<p>This would give some of the advantages of using property based testing. However, one facility that this wouldn’t provide is test-case shrinking. Hypothesis, like QuickCheck before it, will attempt to reduce your test cases for you, when it finds a failure, to find the smallest possible counterexample for the property. This is important, especially when your test generation code can potentially produce very, very large input data initially.</p>
+<p>I think that Hypothesis may have a place in the edx testing ecosystem. The methods covered in this post would benefit, and there are likely other properties that we could test as well, especially with a little investment in data generation. For instance, we could generate random courses with the installed XBlocks, and validate that import/export are inverses. We might also be able to test stateful code using Hypothesis’ stateful testing mechanism (which I hope to explore in a future post).</p>]]></description>
+    <pubDate>Mon, 02 Feb 2015 00:00:00 UT</pubDate>
+    <guid>http://vengefulpickle.com/posts/hypothesis.html</guid>
+</item>
+
+    </channel> 
+</rss>
