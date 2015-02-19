@@ -43,6 +43,17 @@ main = do
             route   idRoute
             compile compressCssCompiler
 
+        create ["atom.xml"] $ compileFeed postsPattern renderAtom
+        create ["rss.xml"] $ compileFeed postsPattern renderRss
+
+        create ["rss.xml"] $ do
+            route idRoute
+            compile $ do
+                let feedCtx = postCtx `mappend` bodyField "description"
+                posts <- fmap (take 10) . recentFirst =<<
+                    loadAllSnapshots postsPattern "content"
+                renderRss myFeedConfiguration feedCtx posts
+
         match postsPattern $ do
             route $ setExtension "html"
             compile $ do
@@ -80,3 +91,21 @@ postCtx = mconcat
     , teaserField "teaser" "content"
     , defaultContext
     ]
+
+myFeedConfiguration :: FeedConfiguration
+myFeedConfiguration = FeedConfiguration
+    { feedTitle       = "Vengefulpickle"
+    , feedDescription = "The personal, technical blog for Calen Pennington"
+    , feedAuthorName  = "Calen Pennington"
+    , feedAuthorEmail = "calen.pennington@gmail.com"
+    , feedRoot        = "http://vengefulpickle.com"
+    }
+
+
+compileFeed postsPattern renderFeed = do
+    route idRoute
+    compile $ do
+        let feedCtx = postCtx `mappend` bodyField "description"
+        posts <- fmap (take 10) . recentFirst =<<
+            loadAllSnapshots postsPattern "content"
+        renderFeed myFeedConfiguration feedCtx posts
