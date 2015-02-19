@@ -42,17 +42,16 @@ they found any path from the root to an `CombinedSystem`.
 
 ~~~ sql
 ::> select * from obj where type = 'CombinedSystem';
-#                 address type                 name                 value                                                              size        len mark       repr
--------- ---------------- -------------------- -------------------- ------------------------------------------------------------ ---------- ---------- ---------- ----------
-#1.0            270528592 CombinedSystem       ∘                    ∘                                                                    64          ∘ ∘          CombinedSy
-#1.1            256545552 CombinedSystem       ∘                    ∘                                                                    64          ∘ ∘          CombinedSy
-#1.2            239994960 CombinedSystem       ∘                    ∘                                                                    64          ∘ ∘          CombinedSy
-<snip>
-#1.1021         210278800 CombinedSystem       ∘                    ∘                                                                    64          ∘ ∘          CombinedSy
-#1.1022         196178640 CombinedSystem       ∘                    ∘                                                                    64          ∘ ∘          CombinedSy
-#1.1023         179498384 CombinedSystem       ∘                    ∘                                                                    64          ∘ ∘          CombinedSy
-#1.1024         166197904 CombinedSystem       ∘                    ∘                                                                    64          ∘ ∘          CombinedSy
-#1.1025         149917968 CombinedSystem       ∘                    ∘                                                                    64          ∘ ∘          CombinedSy
+#                 address type                 name   value    size    len mark       repr
+-------- ---------------- -------------------- ------ ------ ------ ------ ---------- ----------
+#1.0            270528592 CombinedSystem       ∘      ∘          64      ∘ ∘          CombinedSy
+#1.1            256545552 CombinedSystem       ∘      ∘          64      ∘ ∘          CombinedSy
+#1.2            239994960 CombinedSystem       ∘      ∘          64      ∘ ∘          CombinedSy
+#1.1021         210278800 CombinedSystem       ∘      ∘          64      ∘ ∘          CombinedSy
+#1.1022         196178640 CombinedSystem       ∘      ∘          64      ∘ ∘          CombinedSy
+#1.1023         179498384 CombinedSystem       ∘      ∘          64      ∘ ∘          CombinedSy
+#1.1024         166197904 CombinedSystem       ∘      ∘          64      ∘ ∘          CombinedSy
+#1.1025         149917968 CombinedSystem       ∘      ∘          64      ∘ ∘          CombinedSy
 ~~~
 
 Picking an arbitrary `CombinedSystem`, we can find out what's pointing
