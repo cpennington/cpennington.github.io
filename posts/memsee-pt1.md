@@ -1,7 +1,7 @@
 ---
 title: A Tale of Two Leaks: A Static Leak
 published: 2015-02-10
-edited: 2015-02-12
+edited: 2015-02-19
 ---
 
 This is the second of a 3-part series on memory leaks in [edx-platform][]. Read
@@ -300,10 +300,10 @@ the global copy. The answer turns out to be that the `LmsModuleSystem` was creat
 while the global `ModuleStore` was being initialized. As a result, it couldn't retrieve the as-yet incomplete
 global copy of the `ModuleStore`, and created a new one instead.
 
-[The solution](https://github.com/edx/edx-platform/pull/6892) to the leak involved removing the static creation of `LmsModuleSystem` from the old OpenEndedResponse
+[The solution][] to the leak involved removing the static creation of `LmsModuleSystem` from the old OpenEndedResponse
 code.
 
-In part 2, I'll detail how I debugged linear memory growth in our offline grading process.
+In [part 2][], I'll detail how I debugged linear memory growth in our offline grading process.
 
 [edx-platform]: https://github.com/edx/edx-platform
 [meliae]: https://pypi.python.org/pypi/meliae
@@ -312,3 +312,5 @@ In part 2, I'll detail how I debugged linear memory growth in our offline gradin
 [gunicorn]: http://gunicorn.org/
 [uWSGI]: https://uwsgi-docs.readthedocs.org/en/latest/
 [SQLite]: https://www.sqlite.org/
+[The solution]: https://github.com/edx/edx-platform/pull/6892
+[part 2]: /posts/memsee-pt2.html
