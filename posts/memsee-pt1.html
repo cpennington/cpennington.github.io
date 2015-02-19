@@ -259,7 +259,7 @@ openedx.core.operations.install_memory_dumper()
 <p>Releasing that modulestore freed 650Mb of memory, which accounts for the amount of unexpected memory use we observed on production.</p>
 <p>The next question was why the <code>open_ended_grading.utils</code> was creating a separate copy of the ModuleStores, rather than the global copy. The answer turns out to be that the <code>LmsModuleSystem</code> was created during import, which happened while the global <code>ModuleStore</code> was being initialized. As a result, it couldn’t retrieve the as-yet incomplete global copy of the <code>ModuleStore</code>, and created a new one instead.</p>
 <p><a href="https://github.com/edx/edx-platform/pull/6892">The solution</a> to the leak involved removing the static creation of <code>LmsModuleSystem</code> from the old OpenEndedResponse code.</p>
-<p>In part 2, I’ll detail how I debugged linear memory growth in our offline grading process.</p>
+<p>In <a href="../posts/memsee-pt2.html">part 2</a>, I’ll detail how I debugged linear memory growth in our offline grading process.</p>
 </section>
     <aside class="comments">
         <div id="disqus_thread"></div>
