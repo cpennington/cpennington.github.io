@@ -1,6 +1,7 @@
 ---
 title: A Tale of Two Leaks: An Incremental Leak
 published: 2015-02-17
+edited: 2015-02-19
 ---
 
 In [part 1][], we saw a memory leak that was in
@@ -267,3 +268,5 @@ the `DescriptorSystem` from the `CombinedSystem` itself.
 [XBlock]: https://github.com/edx/xblock
 [edX]: https://www.edx.org/
 [objgraph]: http://mg.pov.lt/objgraph/
+[memsee]: https://github.com/nedbat/memsee
+[meliae]: https://pypi.python.org/pypi/meliae
