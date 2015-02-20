@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"
+    xmlns:dc="http://purl.org/dc/elements/1.1/">
     <channel>
         <title>Vengefulpickle</title>
         <link>http://vengefulpickle.com</link>
@@ -181,6 +182,7 @@ xmodule_runtime|         |descriptor_runtime
 </section>]]></description>
     <pubDate>Tue, 17 Feb 2015 00:00:00 UT</pubDate>
     <guid>http://vengefulpickle.com/posts/memsee-pt2.html</guid>
+    <dc:creator>Calen Pennington</dc:creator>
 </item>
 <item>
     <title>A Tale of Two Leaks: A Static Leak</title>
@@ -416,6 +418,7 @@ openedx.core.operations.install_memory_dumper()
 </section>]]></description>
     <pubDate>Tue, 10 Feb 2015 00:00:00 UT</pubDate>
     <guid>http://vengefulpickle.com/posts/memsee-pt1.html</guid>
+    <dc:creator>Calen Pennington</dc:creator>
 </item>
 <item>
     <title>A Tale of Two Leaks: An Introduction to Memsee</title>
@@ -555,6 +558,7 @@ openedx.core.operations.install_memory_dumper()
 </section>]]></description>
     <pubDate>Tue, 10 Feb 2015 00:00:00 UT</pubDate>
     <guid>http://vengefulpickle.com/posts/memsee-intro.html</guid>
+    <dc:creator>Calen Pennington</dc:creator>
 </item>
 <item>
     <title>Using Hypothesis</title>
@@ -707,7 +711,8 @@ openedx.core.operations.install_memory_dumper()
 <p>I think that Hypothesis may have a place in the edx testing ecosystem. The methods covered in this post would benefit, and there are likely other properties that we could test as well, especially with a little investment in data generation. For instance, we could generate random courses with the installed XBlocks, and validate that import/export are inverses. We might also be able to test stateful code using Hypothesis’ stateful testing mechanism (which I hope to explore in a future post).</p>]]></description>
     <pubDate>Mon, 02 Feb 2015 00:00:00 UT</pubDate>
     <guid>http://vengefulpickle.com/posts/hypothesis.html</guid>
+    <dc:creator>Calen Pennington</dc:creator>
 </item>
 
-    </channel> 
+    </channel>
 </rss>
