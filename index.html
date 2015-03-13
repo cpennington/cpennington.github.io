@@ -30,6 +30,18 @@
     
         <article class="post-snippet">
             <header>
+                <h3 class="title"><a href="./posts/config-model.html">Database Backed Configuration for Django</a></h3>
+                <div class="byline">March 13, 2015</div>
+            </header>
+            <div class="teaser">
+            <p>At <a href="http://edx.org">edX</a>, we’ve gone through several evolutions of how we configure our primary django application (<a href="https://github.com/edx/edx-platform">edx-platform</a>). We started with a <code>settings.py</code>, as is standard for django projects. I completed the migration from a single settings file to a directory of environment-specific settings files in <a href="https://github.com/edx/edx-platform/commit/a2eb8fcada01cce096cad8eabdeccb449149d4db">this commit</a>. One of those environment specific files was <a href="https://github.com/edx/edx-platform/blob/a2eb8fcada01cce096cad8eabdeccb449149d4db/envs/aws.py#L24-L25">aws.py</a> which read in specific settings from json configuration files that we could deploy with configuration management software. That setup continues to be the way we inject production configuration <a href="https://github.com/edx/edx-platform/blob/master/lms/envs/aws.py#L116-L117">to this day</a>.</p>
+<p>One downside of this style of configuration, however, is that it requires a redeploy/reboot cycle to update the configuration. It would be better to have the configuration stored in a central location that the system could read from (and update) on demand.</p>
+
+            <a href="./posts/config-model.html">Read more...</a>
+        </article>
+    
+        <article class="post-snippet">
+            <header>
                 <h3 class="title"><a href="./posts/memsee-pt2.html">A Tale of Two Leaks: An Incremental Leak</a></h3>
                 <div class="byline">February 17, 2015</div>
             </header>
@@ -94,6 +106,11 @@
             <aside class="posts well col-lg-12 col-md-4">
                 <h4>Recent Posts</h4>
                 <ul class="post-list">
+                    
+                        <li>
+                            <a href="./posts/config-model.html">Database Backed Configuration for Django</a>
+                            <div class="post-date">March 13, 2015</div>
+                        </li>
                     
                         <li>
                             <a href="./posts/memsee-pt2.html">A Tale of Two Leaks: An Incremental Leak</a>

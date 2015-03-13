@@ -8,8 +8,127 @@
         <name>Calen Pennington</name>
         <email>calen.pennington@gmail.com</email>
     </author>
-    <updated>2015-02-17T00:00:00Z</updated>
+    <updated>2015-03-13T00:00:00Z</updated>
     <entry>
+    <title>Database Backed Configuration for Django</title>
+    <link href="http://vengefulpickle.com/posts/config-model.html" />
+    <id>http://vengefulpickle.com/posts/config-model.html</id>
+    <published>2015-03-13T00:00:00Z</published>
+    <updated>2015-03-13T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<p>At <a href="http://edx.org">edX</a>, we’ve gone through several evolutions of how we configure our primary django application (<a href="https://github.com/edx/edx-platform">edx-platform</a>). We started with a <code>settings.py</code>, as is standard for django projects. I completed the migration from a single settings file to a directory of environment-specific settings files in <a href="https://github.com/edx/edx-platform/commit/a2eb8fcada01cce096cad8eabdeccb449149d4db">this commit</a>. One of those environment specific files was <a href="https://github.com/edx/edx-platform/blob/a2eb8fcada01cce096cad8eabdeccb449149d4db/envs/aws.py#L24-L25">aws.py</a> which read in specific settings from json configuration files that we could deploy with configuration management software. That setup continues to be the way we inject production configuration <a href="https://github.com/edx/edx-platform/blob/master/lms/envs/aws.py#L116-L117">to this day</a>.</p>
+<p>One downside of this style of configuration, however, is that it requires a redeploy/reboot cycle to update the configuration. It would be better to have the configuration stored in a central location that the system could read from (and update) on demand.</p>
+<!--more-->
+<section id="the-requirements" class="level2">
+<h2>The Requirements</h2>
+<p>After consultation with edX’s operations folks, we agreed that ideally the system would:</p>
+<ol type="1">
+<li>Store the data in our central database.</li>
+<li>Record the history of who changed values, and when (losing that information would be a big disadvantage when coming from a centralized version-control based configuration system).</li>
+<li>Allow for rolling deployment.</li>
+<li>Cache configured values, so that the database isn’t constantly under load.</li>
+<li>Be easy to extend to cover new types of configuration.</li>
+<li>Have some sort of administration interface for managing the values.</li>
+</ol>
+<p>None of the existing configuration-via-database solutions for django seemed to offer all of those features, so I built a small django app to attempt to solve the problem.</p>
+</section>
+<section id="design-decisions" class="level2">
+<h2>Design Decisions</h2>
+<p>The obvious choice for solving requirements #1 and #5 was to use django Models to store the configuration. This also meant that I could build on the django admin interface to easily build #6. A sprinkle of django-cache satisfied #4.</p>
+<p>By choosing to model configuration in django models, we had to then answer the question of how to build new types of configuration. I opted for <code>ConfigurationModel</code> to be a model base class, so that I could build common functionality around recording change history into that class. I made the model <a href="https://docs.djangoproject.com/en/1.4/topics/db/models/#abstract-base-classes">abstract</a> so that each configuration grouping would have a separate table to track changes in.</p>
+<p>That base abstract model provided a good place to ground common behavior to solve #2 (when paired with some judicious features in the django admin views). It also gave a common location to provide caching facilities.</p>
+<p>The final constraint, rolling deployments, was handled as a side effect of using South migrations. As long as the database is migrated before the servers, and as long as columns are only added, then adding new configuration types is safe to deploy to live servers.</p>
+</section>
+<section id="using-configurationmodels" class="level2">
+<h2>Using ConfigurationModels</h2>
+<p>One of edx-platforms current pieces of configuration is the set of users who have been banned from the site (fortunately, a very short list). This is being stored in the <code>UserStanding</code> model, reproduced below.</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="kw">class</span> UserStanding(models.Model):
+    <span class="co">&quot;&quot;&quot;</span>
+<span class="co">    This table contains a student&#39;s account&#39;s status.</span>
+<span class="co">    Currently, we&#39;re only disabling accounts; in the future we can imagine</span>
+<span class="co">    taking away more specific privileges, like forums access, or adding</span>
+<span class="co">    more specific karma levels or probationary stages.</span>
+<span class="co">    &quot;&quot;&quot;</span>
+    ACCOUNT_DISABLED = <span class="st">&quot;disabled&quot;</span>
+    ACCOUNT_ENABLED = <span class="st">&quot;enabled&quot;</span>
+    USER_STANDING_CHOICES = (
+        (ACCOUNT_DISABLED, <span class="st">u&quot;Account Disabled&quot;</span>),
+        (ACCOUNT_ENABLED, <span class="st">u&quot;Account Enabled&quot;</span>),
+    )
+
+    user = models.ForeignKey(User, db_index=<span class="ot">True</span>, related_name=<span class="st">&#39;standing&#39;</span>, unique=<span class="ot">True</span>)
+    account_status = models.CharField(
+        blank=<span class="ot">True</span>, max_length=<span class="dv">31</span>, choices=USER_STANDING_CHOICES
+    )
+    changed_by = models.ForeignKey(User, blank=<span class="ot">True</span>)
+    standing_last_changed_at = models.DateTimeField(auto_now=<span class="ot">True</span>)</code></pre>
+<p>This table is checked before every page in the app, and, surprisingly, is responsible for nearly 10% of our database time on production. We wanted to put it under a cache, and it seemed convenient to pull it into our common configuration settings.</p>
+<p>First, I created a <code>ConfigurationModel</code> subclass with a single field.</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="kw">class</span> UserStandingConfig(ConfigurationModel):
+    disabled = models.TextField(
+        help_text=<span class="st">&quot;White-space separated list of usernames of users who should be disabled&quot;</span>,
+        blank=<span class="ot">True</span>,
+    )
+
+    <span class="ot">@property</span>
+    <span class="kw">def</span> disabled_list(<span class="ot">self</span>):
+        <span class="kw">return</span> <span class="ot">self</span>.disabled.split()</code></pre>
+<p>The number of banned users is small, so the impact of parsing from the list frequently should be minor. Future work will make even that work unnecessary.</p>
+<p>Once the model is created, we can modify the middleware to use it.</p>
+<pre class="sourceCode diff"><code class="sourceCode diff"> class UserStandingMiddleware(object):
+     def process_request(self, request):
+         user = request.user
+<span class="st">-        try:</span>
+<span class="st">-            user_account = UserStanding.objects.get(user=user.id)</span>
+<span class="st">-            # because user is a unique field in UserStanding, there will either be</span>
+<span class="st">-            # one or zero user_accounts associated with a UserStanding</span>
+<span class="st">-        except UserStanding.DoesNotExist:</span>
+<span class="st">-            pass</span>
+<span class="st">-        else:</span>
+<span class="st">-            if user_account.account_status == UserStanding.ACCOUNT_DISABLED:</span>
+<span class="st">-                msg = _(</span>
+<span class="st">-                    &#39;Your account has been disabled. If you believe &#39;</span>
+<span class="st">-                    &#39;this was done in error, please contact us at &#39;</span>
+<span class="st">-                    &#39;{support_email}&#39;</span>
+<span class="st">-                ).format(</span>
+<span class="st">-                    support_email=u&#39;&lt;a href=&quot;mailto:{address}?subject={subject_line}&quot;&gt;{address}&lt;/a&gt;&#39;.format(</span>
+<span class="st">-                        address=settings.DEFAULT_FEEDBACK_EMAIL,</span>
+<span class="st">-                        subject_line=_(&#39;Disabled Account&#39;),</span>
+<span class="st">-                    ),</span>
+<span class="st">-                )</span>
+<span class="st">-                return HttpResponseForbidden(msg)</span>
+<span class="ot">+        config = UserStandingConfig.current()</span>
+<span class="ot">+        if config.enabled and user.username in config.disabled_list:</span>
+<span class="ot">+            msg = _(</span>
+<span class="ot">+                &#39;Your account has been disabled. If you believe &#39;</span>
+<span class="ot">+                &#39;this was done in error, please contact us at &#39;</span>
+<span class="ot">+                &#39;{support_email}&#39;</span>
+<span class="ot">+            ).format(</span>
+<span class="ot">+                support_email=u&#39;&lt;a href=&quot;mailto:{address}?subject={subject_line}&quot;&gt;{address}&lt;/a&gt;&#39;.format(</span>
+<span class="ot">+                    address=settings.DEFAULT_FEEDBACK_EMAIL,</span>
+<span class="ot">+                    subject_line=_(&#39;Disabled Account&#39;),</span>
+<span class="ot">+                ),</span>
+<span class="ot">+            )</span>
+<span class="ot">+            return HttpResponseForbidden(msg)</span></code></pre>
+<p>Key points to note: <code>UserStandingConfig.current()</code> returns the currently active configuration, read from the cache. <code>.enabled</code> is a field provided by the <code>ConfigurationModel</code> base class, which is used to provide a consistent way to enable/disable features on an individual basis.</p>
+<p>Further changes (viewable in <a href="https://github.com/edx/edx-platform/pull/7283">the PR</a> against edx-platform) include deleting all of the existing ui which allows for modification of the user standing, in favor of the built-in functionality provided by the <code>ConfigurationModel</code> admin view. However, we need to wire that view to the model.</p>
+<pre class="sourceCode diff"><code class="sourceCode diff"># common/djangoapps/student/admin
+ @@ -57,3 +58,5 @@ class Meta:
+ admin.site.register(DashboardConfiguration, ConfigurationModelAdmin)
+
+ admin.site.register(LinkedInAddToProfileConfiguration, LinkedInAddToProfileConfigurationAdmin)
+<span class="ot">+</span>
+<span class="ot">+admin.site.register(UserStandingConfig, ConfigurationModelAdmin)</span></code></pre>
+</section>
+<section id="future-work" class="level2">
+<h2>Future Work</h2>
+<p>A change that’s in-progress is to allow for keyed <code>ConfigurationModels</code>. That is, allow for configuration that varies depending on which (for example) user or course it applies to, and is queried and cached separately for each, but with all of the same niceties provided for the current <code>ConfigurationModel</code>. That would change the middleware code to just use</p>
+<pre class="sourceCode python"><code class="sourceCode python">config = UserStandingConfig.current(user)
+<span class="kw">if</span> config.account_disabled:
+    ...</code></pre>
+<p>We would also like to convert more of edx-platform’s existing configuration into <code>ConfigurationModels</code>, to make it easier to get an instance up and running, and also to make it easier to manage the <a href="http://edx.org">edX</a> instances.</p>
+</section>]]></summary>
+</entry>
+<entry>
     <title>A Tale of Two Leaks: An Incremental Leak</title>
     <link href="http://vengefulpickle.com/posts/memsee-pt2.html" />
     <id>http://vengefulpickle.com/posts/memsee-pt2.html</id>
