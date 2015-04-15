@@ -8,8 +8,200 @@
         <name>Calen Pennington</name>
         <email>calen.pennington@gmail.com</email>
     </author>
-    <updated>2015-03-13T00:00:00Z</updated>
+    <updated>2015-04-14T00:00:00Z</updated>
     <entry>
+    <title>MyPyCon 2015</title>
+    <link href="http://vengefulpickle.com/posts/pycon-2015.html" />
+    <id>http://vengefulpickle.com/posts/pycon-2015.html</id>
+    <published>2015-04-14T00:00:00Z</published>
+    <updated>2015-04-14T00:00:00Z</updated>
+    <summary type="html"><![CDATA[<div id="toc"><ul>
+<li><a href="#friday">Friday</a><ul>
+<li><a href="#how-to-be-more-effective-with-functions---brett-slatkin"><a href="https://www.youtube.com/watch?v=WjJUPxKB164">How to Be More Effective with Functions - Brett Slatkin</a></a></li>
+<li><a href="#pypy.js---ryan-kelly"><a href="https://www.youtube.com/watch?v=PiBfOFqDIAI">PyPy.js - Ryan Kelly</a></a></li>
+<li><a href="#beyond-pep8---raymond-hettinger"><a href="https://www.youtube.com/watch?v=wf-BqAjZb8M">Beyond PEP8 - Raymond Hettinger</a></a></li>
+<li><a href="#how-to-make-your-code-python-23-compatible---brett-cannon"><a href="https://www.youtube.com/watch?v=KPzDX5TX5HE">How to make your code Python 2/3 compatible - Brett Cannon</a></a></li>
+<li><a href="#my-pythons-a-little-rust-y---dan-callahan"><a href="https://www.youtube.com/watch?v=3CwJ0MH-4MA">My Python’s a little Rust-y - Dan Callahan</a></a></li>
+<li><a href="#python-concurrency-from-the-ground-up-live---david-beazley"><a href="https://www.youtube.com/watch?v=MCs5OvhV9S4">Python Concurrency From the Ground Up: LIVE! - David Beazley</a></a></li>
+<li><a href="#evening-lightning-talks"><a href="https://www.youtube.com/watch?v=yws4n-0-Yj8">Evening Lightning Talks</a></a></li>
+</ul></li>
+<li><a href="#saturday">Saturday</a><ul>
+<li><a href="#morning-lightning-talks"><a href="https://www.youtube.com/watch?v=byClBydNI1A">Morning Lightning Talks</a></a></li>
+<li><a href="#keynote---guido-van-rossum">Keynote - Guido van Rossum</a></li>
+<li><a href="#how-our-engineering-environments-are-killing-diversity-and-how-we-can-fix-it---kate-heddleston"><a href="https://www.youtube.com/watch?v=kNke_4WOWAU">How our engineering environments are killing diversity (and how we can fix it) - Kate Heddleston</a></a></li>
+<li><a href="#learning-from-others-mistakes-data-driven-analysis-of-python-code---andreas-dewes"><a href="https://www.youtube.com/watch?v=rN0kNQLDYCI">Learning from other’s mistakes: Data-driven analysis of Python code - Andreas Dewes</a></a></li>
+<li><a href="#type-hinting-open-space">Type-Hinting Open Space</a></li>
+<li><a href="#techniques-for-debugging-hard-problems---alex-gaynor"><a href="https://www.youtube.com/watch?v=ij99SGGEX34">Techniques for Debugging Hard Problems - Alex Gaynor</a></a></li>
+<li><a href="#lessons-learned-with-asyncio-look-ma-i-wrote-a-distributed-hash-table---nicholas-tollervey"><a href="https://www.youtube.com/watch?v=1eew8BngN7Y">Lessons Learned with asyncio (“Look ma, I wrote a distributed hash table!”) - Nicholas Tollervey</a></a></li>
+<li><a href="#evening-lightning-talks-1"><a href="https://www.youtube.com/watch?v=JVVMMULwR4s">Evening Lightning Talks</a></a></li>
+</ul></li>
+<li><a href="#sunday">Sunday</a><ul>
+<li><a href="#morning-lightning-talks-1"><a href="https://www.youtube.com/watch?v=ZEE3dlo7ov0">Morning Lightning Talks</a></a></li>
+<li><a href="#poster-session">Poster Session</a></li>
+<li><a href="#python-performance-profiling-the-guts-and-the-glory---a.-jesse-jiryu-davis"><a href="https://www.youtube.com/watch?v=4uJWWXYHxaM">Python Performance Profiling: The Guts And The Glory - A. Jesse Jiryu Davis</a></a></li>
+<li><a href="#type-hints---guido-van-rossum"><a href="https://www.youtube.com/watch?v=2wDvzy6Hgxg">Type Hints - Guido van Rossum</a></a></li>
+</ul></li>
+</ul></div>
+<p>I just got back from <a href="http://us.pycon.org/2015/">PyCon 2015</a> as part of the <a href="http://edx.org">edX</a> delegation (there were 8 of us in total). What follows are my notes and thoughts on many of the talks that I went to.</p>
+<!--more-->
+<section id="friday" class="level1">
+<h1>Friday</h1>
+<p>I arrived Friday morning on an early (too early) flight, but still only arrived at the end of the keynote by Catherine Bracy about <a href="https://www.codeforamerica.org/">Code For America</a>. I only caught enough to pique my interest, though, and not enough to really write anything more interesting about.</p>
+<section id="how-to-be-more-effective-with-functions---brett-slatkin" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=WjJUPxKB164">How to Be More Effective with Functions - Brett Slatkin</a></h2>
+<p>In the first talk I attended, the key takeaways for me were around keyword-only arguments (sadly, a feature not supported by python 2.7 natively), and around checking for whether an iterable is a container (like a list) that can be iterated over more than once, or just a single-use iterator.</p>
+<p>All of Brett’s suggestions were spot on. Check out the talk for the leadup, but one thing I’d love to do is take his example for an iterable-container class, and convert it into a <code>reiterable</code> decorator.</p>
+<pre class="sourceCode python"><code class="sourceCode python"><span class="co"># Brett&#39;s example</span>
+<span class="kw">class</span> LoadCities(<span class="dt">object</span>):
+    <span class="kw">def</span> <span class="ot">__init__</span>(<span class="ot">self</span>, path):
+        <span class="ot">self</span>.path = path
+
+    <span class="kw">def</span> <span class="ot">__iter__</span>(<span class="ot">self</span>):
+        <span class="kw">with</span> <span class="dt">open</span>(<span class="ot">self</span>.path) <span class="ch">as</span> handle:
+            <span class="kw">for</span> line in handle:
+                cit, count = line.split()
+                <span class="kw">yield</span> city, <span class="dt">int</span>(count)
+
+
+<span class="co"># A re-usable decorator</span>
+
+<span class="kw">def</span> _Reiterable(<span class="dt">object</span>):
+    <span class="kw">def</span> <span class="ot">__init__</span>(<span class="ot">self</span>, fn, args, kwargs):
+        <span class="ot">self</span>.fn = fn
+        <span class="ot">self</span>.args = args
+        <span class="ot">self</span>.kwargs = kwargs
+
+    <span class="kw">def</span> <span class="ot">__iter__</span>(<span class="ot">self</span>):
+        <span class="kw">return</span> <span class="ot">self</span>.fn(*args, **kwargs)
+
+<span class="kw">def</span> reiterable(fn):
+    <span class="ot">@functools.wraps</span>(fn)
+    <span class="kw">def</span> wrapper(*args, **kwargs):
+        <span class="kw">return</span> _Reiterable(fn, args, kwargs)
+
+<span class="ot">@reiterable</span>
+<span class="kw">def</span> load_cities(path):
+    <span class="kw">with</span> <span class="dt">open</span>(<span class="ot">self</span>.path) <span class="ch">as</span> handle:
+        <span class="kw">for</span> line in handle:
+            cit, count = line.split()
+            <span class="kw">yield</span> city, <span class="dt">int</span>(count)</code></pre>
+</section>
+<section id="pypy.js---ryan-kelly" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=PiBfOFqDIAI">PyPy.js - Ryan Kelly</a></h2>
+<p>Ryan’s talk was about his mashup of PyPy (the JITting python compiler) and Emscripten (an LLVM to Javascript compiler) and how that could provide an onramp towards support for Python in the web-browser. Amazing stuff, including a tracking site where you can track how the progress is going: <a href="http://arewepythonyet.com/">Are we python yet?</a>.</p>
+</section>
+<section id="beyond-pep8---raymond-hettinger" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=wf-BqAjZb8M">Beyond PEP8 - Raymond Hettinger</a></h2>
+<p>As you might expect from the original author of <code>namedtuple</code>, Raymond’s talk focused on how you can use python features to write simple, Pythonic code, even over un-Pythonic interfaces, and how simply focusing on PEP8 compliance can leave your code in a suboptimal state. I loved the way he clarified the interface in his examples (and his delivery was excellent).</p>
+</section>
+<section id="how-to-make-your-code-python-23-compatible---brett-cannon" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=KPzDX5TX5HE">How to make your code Python 2/3 compatible - Brett Cannon</a></h2>
+<p>My takeaways from Brett’s talk were:</p>
+<ol type="1">
+<li><p>there are lots of tools to help with the mechanical transformations (<a href="http://python-future.org/automatic_conversion.html">futurize</a> and <a href="https://pypi.python.org/pypi/modernize">modernize</a>).</p></li>
+<li><p><a href="https://pypi.python.org/pypi/six">six</a> can help us build libraries that work in both Python 2 and 3.</p></li>
+<li><p>You still have to think about how your strings are used (are they text? or are they bytes?).</p></li>
+<li><p>We (<a href="http://edx.org">edX</a>) should be making a push towards running on Python 3 (and we’re not that far away: <a href="https://caniusepython3.com/check/a48ab687-f601-40d1-a12d-b4c91bca717b" class="uri">https://caniusepython3.com/check/a48ab687-f601-40d1-a12d-b4c91bca717b</a>).</p></li>
+</ol>
+</section>
+<section id="my-pythons-a-little-rust-y---dan-callahan" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=3CwJ0MH-4MA">My Python’s a little Rust-y - Dan Callahan</a></h2>
+<p>I had heard of, but never really explored, <a href="http://www.rust-lang.org/">Rust</a> before this talk. Dan covered the bare basics of the language, and how it approaches memory safety, along with how to use <a href="https://cffi.readthedocs.org/en/latest/">cFFI</a> to execute a <a href="http://www.rust-lang.org/">Rust</a> function from within Python, and how you can use that to improve the performance of your CPU heavy code. This isn’t a need that we’ve really had yet at <a href="http://edx.org">edX</a>, but it’s a great tool to have in your bag of tricks if it’s needed.</p>
+</section>
+<section id="python-concurrency-from-the-ground-up-live---david-beazley" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=MCs5OvhV9S4">Python Concurrency From the Ground Up: LIVE! - David Beazley</a></h2>
+<p>This talk was excellent, and packed! David walked through bare-bones, socket level implementations of several different concurrency models (single-process multithreading, single-threaded event-loop, event-loop with multi-process pool, event-loop with multi-threading), and demonstrated how each of those models interacted with multiple clients and with the GIL.</p>
+</section>
+<section id="evening-lightning-talks" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=yws4n-0-Yj8">Evening Lightning Talks</a></h2>
+<p>Highlights:</p>
+<ul>
+<li><a href="https://github.com/CenterForOpenScience/waterbutler">Waterbutler</a> - streaming file updload/downloads</li>
+<li><a href="https://github.com/catherinedevlin/ipython-sql">ipython-sql</a> - Nicely formatted sql output in an ipython notebook</li>
+<li><a href="https://github.com/18F/rdbms-subsetter">rdbms-subsetter</a> - Get a consistent subset of a sql database with a target size</li>
+<li><a href="http://pgcli.com/">pgcli</a> (and <a href="https://www.kickstarter.com/projects/1839007321/mysql-cli">mysqlcli</a>) - Better colors and autocompletion in a sql client on the commandline</li>
+<li><a href="https://github.com/CenterForOpenScience/modular-odm">modular-odm</a> - Perhaps a way to build the next version of XBlock fields?</li>
+</ul>
+</section>
+</section>
+<section id="saturday" class="level1">
+<h1>Saturday</h1>
+<section id="morning-lightning-talks" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=byClBydNI1A">Morning Lightning Talks</a></h2>
+<p>Highlights:</p>
+<ul>
+<li><a href="https://github.com/phildini/ducker/">ducker</a> - A yet-to-be-implemented project to expose python docs to a chatbot</li>
+</ul>
+</section>
+<section id="keynote---guido-van-rossum" class="level2">
+<h2>Keynote - Guido van Rossum</h2>
+<p>Guido’s keynote hit two topics. The first was a call to action towards moving from Python 2 to Python 3, and a rumination about what to do with the ~50000 projects on PyPi that haven’t moved (and perhaps won’t, because they are abandoned). He suggested perhaps emailing the authors of projects that haven’t been updated recently, and suggesting co-ownership for the projects. Later, in the bus on the way to the airport, I talked with a fellow attendee named Jonathan about the possibility of automating forking of abandoned/co-owned projects onto github (that seems perhaps overly aggressive now that I write it down, but perhaps it’s a reasonable option for those projects that are truly abandoned, and which have compatible licenses).</p>
+<p>Guido’s second topic was a call for more diversity in the Python community, and to set a goal of having at least two (I think) female core committers by next PyCon.</p>
+</section>
+<section id="how-our-engineering-environments-are-killing-diversity-and-how-we-can-fix-it---kate-heddleston" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=kNke_4WOWAU">How our engineering environments are killing diversity (and how we can fix it) - Kate Heddleston</a></h2>
+<p>Guido’s keynote segued nicely into Kate’s talk about how many behaviors that are common in engineering organizations can drive down diversity. <a href="https://kateheddleston.com/blog">Her blog</a> goes much more into depth on all of the topics in her talk, but for me, the big takeaways were:</p>
+<ol type="1">
+<li>Focus on making suggestions, rather than providing critical feedback</li>
+<li>Work to improve our onboarding documentation and process</li>
+<li>Work to document undocumented processes</li>
+</ol>
+</section>
+<section id="learning-from-others-mistakes-data-driven-analysis-of-python-code---andreas-dewes" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=rN0kNQLDYCI">Learning from other’s mistakes: Data-driven analysis of Python code - Andreas Dewes</a></h2>
+<p>The thing that excited me most about this talk was having a pattern for defining pylint-style rules in a declarative way, rather than having to write down an imperative AST visitor. If the language proves to be reasonable, then that would significantly lower the barrier for teams to detect their own set of linting violations, and to contribute new linters to the open source community.</p>
+</section>
+<section id="type-hinting-open-space" class="level2">
+<h2>Type-Hinting Open Space</h2>
+<p>This was probably the highlight of PyCon for me. Adam (another edXer) noticed it on the Open Spaces board, and so I was able to sit in and listen as Guido and a number other folks discussed the final details of <a href="https://www.python.org/dev/peps/pep-0484/">PEP-484</a>. This included <a href="https://github.com/pludemann">Peter Ludemann</a> and <a href="https://github.com/JukkaL">Jukka Lehtosalo</a>, both of whom I was able to talk to later in the hall as well. Jukka is the author of <a href="https://github.com/JukkaL/mypy">MyPy</a>, which is a static type checker for Python, and the coordinator for <a href="https://github.com/JukkaL/typeshed">typeshed</a>, which provides a place to centralize the type stubs for the Python standard library. Peter is working on <a href="https://github.com/google/pytype">pytype</a>, a tool that infers types based on Python 2 usage and generates type hints for those functions.</p>
+<p>I’m very excited to follow (and hopefully work on) these projects, so that we can start using them at <a href="http://edx.org">edX</a> to provide a little more safety for the core of our platform.</p>
+</section>
+<section id="techniques-for-debugging-hard-problems---alex-gaynor" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=ij99SGGEX34">Techniques for Debugging Hard Problems - Alex Gaynor</a></h2>
+<p>Lots of good suggestions in this one, plus a fun story about a bug in glibc inside a subprocess API. I missed the first part of the talk (about system tracing tools), so this is on a short list of mine to re-watch.</p>
+</section>
+<section id="lessons-learned-with-asyncio-look-ma-i-wrote-a-distributed-hash-table---nicholas-tollervey" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=1eew8BngN7Y">Lessons Learned with asyncio (“Look ma, I wrote a distributed hash table!”) - Nicholas Tollervey</a></h2>
+<p>This talk covered the basics of the asyncio module, and the basics of a distributed hash table. Both were interesting in their own right, but they also reminded me that we need to make sure that we build in an asynchronous API and allow for concurrency when we’re building the <a href="http://edx.org">edX</a> common client (so that we guide developers towards writing code that parallelizes as many API calls as it can).</p>
+</section>
+<section id="evening-lightning-talks-1" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=JVVMMULwR4s">Evening Lightning Talks</a></h2>
+<p>Highlights:</p>
+<ul>
+<li><a href="https://github.com/ssanderson/pstats-view">pStatsViewer</a> - iPython Notebook-based viewer for pStats data</li>
+<li><pesticide.io> - CSS layout debugging</li>
+<li><a href="https://github.com/llllllllll/lazy_python">lazy_python</a> - truly lazy python objects (down to the bytecode)</li>
+</ul>
+</section>
+</section>
+<section id="sunday" class="level1">
+<h1>Sunday</h1>
+<section id="morning-lightning-talks-1" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=ZEE3dlo7ov0">Morning Lightning Talks</a></h2>
+<p>Highlights:</p>
+<ul>
+<li><a href="https://github.com/radix/effect">effect</a> - effect isolation for python</li>
+</ul>
+</section>
+<section id="poster-session" class="level2">
+<h2>Poster Session</h2>
+<p>Highlights:</p>
+<ul>
+<li><a href="http://www.pulpproject.org/">pulp</a> - A repository manager (perhaps as a local PyPI)</li>
+<li><a href="clusterrunner.com">ClusterRunner</a> - A test-parallelization framework</li>
+</ul>
+</section>
+<section id="python-performance-profiling-the-guts-and-the-glory---a.-jesse-jiryu-davis" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=4uJWWXYHxaM">Python Performance Profiling: The Guts And The Glory - A. Jesse Jiryu Davis</a></h2>
+<p>The big takeaway from this one for me was the statement “profiling gives you new hypotheses, but benchmarks are your experiments”. This was in the context of performance profiling and optimization as an application of the scientific method. I know that I’ve been tempted in the past to compare two different runs of a benchmark <em>under profiling</em>, and consider those results to be relevant. But I think Jesse’s point is crucial: code under profiling is being distorted by the profiling itself, so any comparisons between profiling runs is going to reflect that distortion.</p>
+</section>
+<section id="type-hints---guido-van-rossum" class="level2">
+<h2><a href="https://www.youtube.com/watch?v=2wDvzy6Hgxg">Type Hints - Guido van Rossum</a></h2>
+<p>This was Guido’s chance to explain the upcoming type hinting to the Python community. He kept mostly to the syntax, and to the reasoning behind the feature. My impression was that the audience reaction was mixed, but for me, it was exciting to see what’s coming.</p>
+</section>
+</section>]]></summary>
+</entry>
+<entry>
     <title>Database Backed Configuration for Django</title>
     <link href="http://vengefulpickle.com/posts/config-model.html" />
     <id>http://vengefulpickle.com/posts/config-model.html</id>
