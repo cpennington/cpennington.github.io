@@ -1,0 +1,68 @@
+==================================================================
+https://keybase.io/cpennington
+--------------------------------------------------------------------
+
+I hereby claim:
+
+  * I am an admin of http://vengefulpickle.com
+  * I am cpennington (https://keybase.io/cpennington) on keybase.
+  * I have a public key with fingerprint 9ECC D11A 19F6 CF4A DD8A  B1A9 0681 F304 1245 071B
+
+To do so, I am signing this object:
+
+{
+    "body": {
+        "key": {
+            "eldest_kid": "010129de9834fca8e0c99f1e16f9bfa40dfcfe54bd4da374355d65a23e6f17268b340a",
+            "fingerprint": "9eccd11a19f6cf4add8ab1a90681f3041245071b",
+            "host": "keybase.io",
+            "key_id": "0681f3041245071b",
+            "kid": "010129de9834fca8e0c99f1e16f9bfa40dfcfe54bd4da374355d65a23e6f17268b340a",
+            "uid": "576277a4a424a9138a23bcb3e6e29300",
+            "username": "cpennington"
+        },
+        "service": {
+            "hostname": "vengefulpickle.com",
+            "protocol": "http:"
+        },
+        "type": "web_service_binding",
+        "version": 1
+    },
+    "ctime": 1459883642,
+    "expire_in": 157680000,
+    "prev": "ce1dc9e7e5337783d889a5c9c314d75e676a7168f1848bbdaad6259e0c8d14fe",
+    "seqno": 14,
+    "tag": "signature"
+}
+
+which yields the signature:
+
+-----BEGIN PGP MESSAGE-----
+Version: Keybase OpenPGP v2.0.53
+Comment: https://keybase.io/crypto
+
+yMIzAnicrZJbSBVBGMePl6zMzNOVElLWKBKTnd3Z3dlTZg8ZkaXVQ2moh9mZ2eOi
+7R737PFKpJFdpMgyujyZRRBKUUFSQWW3hzC0Hooii4roBhUFXSC6zHZ56rV5GWa+
+3/f//t/Hd218UiA1of/IaHef+jojYfDyoXhgbXJ6c4tgOLRJCLUINezXxWopi3nh
+GosKIUEEIpB0ynQkQ5NgxESi6yZgQDV1w8RQpCYxmQINCimWNSgrClUVLMlMNYEm
+qciQoYiFPMG07Ahzo65le1xWZ4RQADDQTZWYEFOKsAGwLqoImLIIgQQVUQMGT6x2
+Yn4GN2fgGMu3HP7HH+Hf9v7l/7Pv+C85RVMlTcMQQwliHciIkwYxOM0kXRZFH4wx
+18brGadJlNk279dzbGFDnsAD9RZh/mz9Zv5A9YwPxIzXRi1SU8vyibOei0Rdx3OI
+U8vj1Z4XDfnpXlPU5xuYEf6jFDYsm3J9nlDP3JjFy4QAJ4ln+dIAKjpCsgqlPIE1
+Ri2XhS2f4E0gkR+/DKv3fTJAic40psiypiGZIqRjhehEBpBqClM1FWtARSZAEBkG
+xZiqkqLzWSIKoMkEv7c62/FLcp84wjVjVsTGXtxlwoYrAxXJgYTUQMqoRH/RAqlj
+M/6u34N1o79rBVW7NzuLjhw+NfIpo7eidE8H2jZur1aVdSux4NZqs623sKuhWyoO
+Pc499LkrfWio9ExR3/Wvla15S1ZNOfBo+aYFLYPTFlcYY7J78vOLj796n3t/50L1
+0cNZzVXDp/vbPjQeazBuF7cfLjn54+qkL4k59tGppD1n7L3h9G/em6f9PZFdweCM
+nuS3c+Z/FJd2oINP6V3SuX2kLnnR2ZJlkwcnzuuccj2zvbv8ztTMCU/epRXdLBPK
+N55IKarMvlo93NeX01C+4nHRlxsXpq95fqcs8dSOSNbb/e/Tjq58MOIWzhcvlrw4
+39W175IQHHg5c645uy6h6dnpF8Etr1vfnUua2xLv2Pr8J9XwPiY=
+=rVK+
+-----END PGP MESSAGE-----
+
+And finally, I am proving ownership of this host by posting or
+appending to this document.
+
+View my publicly-auditable identity here: https://keybase.io/cpennington
+
+==================================================================
